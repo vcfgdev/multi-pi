@@ -1,0 +1,61 @@
+{
+  "name": "multi-pi",
+  "version": "0.1.0",
+  "description": "Interactive Pi sessions that can spawn, inspect, and message each other.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vcfgdev/multi-pi.git"
+  },
+  "homepage": "https://github.com/vcfgdev/multi-pi#readme",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "bin": {
+    "pi-peer": "./bin/pi-peer"
+  },
+  "files": [
+    "bin/pi-peer",
+    "docs/assets",
+    "extensions/index.ts",
+    "skills/coordinating-pi-peers",
+    "src/cli.ts",
+    "src/cmux.ts",
+    "src/launcher.ts",
+    "src/mux.ts",
+    "src/protocol.ts",
+    "src/tmux.ts",
+    "src/transcript.ts",
+    "src/zellij.ts"
+  ],
+  "keywords": [
+    "pi-package"
+  ],
+  "type": "module",
+  "scripts": {
+    "test": "bun test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun run test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.10",
+    "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.5",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ],
+    "skills": [
+      "./skills/coordinating-pi-peers"
+    ],
+    "image": "https://raw.githubusercontent.com/vcfgdev/multi-pi/main/docs/assets/multi-pi-ui.webp"
+  }
+}

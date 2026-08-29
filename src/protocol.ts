@@ -274,7 +274,10 @@ export class PeerEndpoint {
 				// Ignore incomplete, malformed, or concurrently removed registrations.
 			}
 		}
-		return registrations.sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+		return registrations.sort((left, right) =>
+			left.startedAt.localeCompare(right.startedAt)
+			|| left.sessionId.localeCompare(right.sessionId)
+			|| left.endpointId.localeCompare(right.endpointId));
 	}
 
 	resolve(target: string): PeerRegistration {

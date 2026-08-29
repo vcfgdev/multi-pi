@@ -1,0 +1,27 @@
+name: Publish package
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: jdx/mise-action@v4
+        with:
+          cache: false
+
+      - name: Verify tag matches package version
+        run: test "$GITHUB_REF_NAME" = "$(mise exec -- node -p "require('./package.json').version")"
+
+      - run: mise exec -- bun install --frozen-lockfile
+      - run: mise run check
+      - run: mise exec -- npm publish

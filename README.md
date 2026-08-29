@@ -11,6 +11,14 @@ lineage, and renders the parent status widget.
 
 ![multi-pi session delegation](docs/assets/multi-pi-ui.webp)
 
+**Demo: watch two peers run concurrently and report back (20 seconds)**
+
+https://github.com/user-attachments/assets/b1aac372-e98a-414b-a7bc-03797da6fdf3
+
+> [!NOTE]
+> `multi-pi` is still at a very early stage. Contributions, testing, and
+> feedback are welcome.
+
 ## Install
 
 `multi-pi` supports Pi on macOS and Linux.

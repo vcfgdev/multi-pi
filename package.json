@@ -16,10 +16,11 @@
     "registry": "https://registry.npmjs.org/"
   },
   "bin": {
-    "pi-peer": "./bin/pi-peer"
+    "pi-peer": "./dist/pi-peer.js"
   },
   "files": [
     "bin/pi-peer",
+    "dist/pi-peer.js",
     "docs/assets",
     "extensions/index.ts",
     "skills/coordinating-pi-peers",
@@ -37,6 +38,8 @@
   ],
   "type": "module",
   "scripts": {
+    "build": "bun build --target=node --outfile=dist/pi-peer.js src/cli.ts",
+    "prepack": "bun run build",
     "test": "bun test src/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun run test"

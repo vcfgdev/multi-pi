@@ -28,6 +28,7 @@ interface PeerEndpointLike {
 	publish(publication: PeerPublication): PeerRegistration;
 	list(): PeerRegistration[];
 	receive(handler: (envelope: PeerEnvelope) => Promise<void> | void): Promise<number>;
+	releasePeerReservation?(id: string): void;
 	remove(): void;
 }
 
@@ -219,6 +220,7 @@ export default function multiPi(pi: ExtensionAPI, dependencies: MultiPiDependenc
 	let widgetSpinnerFrame = 0;
 	let requestWidgetRender: (() => void) | undefined;
 	let receiveTask: Promise<void> | undefined;
+	let reservationId = process.env.PI_PEER_RESERVATION_ID;
 	const derivedPeers = new Map<string, { peer: PeerRegistration; missingSince?: number }>();
 
 	function stopWidgetSpinner(): void {
@@ -312,6 +314,11 @@ export default function multiPi(pi: ExtensionAPI, dependencies: MultiPiDependenc
 		currentContext = ctx;
 		try {
 			endpoint.publish(publication(ctx));
+			if (reservationId) {
+				endpoint.releasePeerReservation?.(reservationId);
+				reservationId = undefined;
+				delete process.env.PI_PEER_RESERVATION_ID;
+			}
 		} catch {
 			// Presence publication must never break the interactive session.
 		}

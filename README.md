@@ -69,6 +69,26 @@ call path, race window, relevant tests, and smallest safe fix. Keep this read-on
 EOF
 ```
 
+In a fresh single-pane mux layout, the main pane initially occupies the full
+window. Peers use this default order:
+
+1. The first peer opens to the right of the main pane.
+2. Each additional peer opens below the bottom-most pane in the right column.
+3. Closing a peer removes it from the limit and the next peer uses the current
+   bottom of the right column.
+
+```text
+┌──────────────┬────────┐
+│              │ Peer 1 │
+│              ├────────┤
+│ Main         │ Peer 2 │
+│              ├────────┤
+│              │  ...   │
+│              ├────────┤
+│              │ Peer 7 │
+└──────────────┴────────┘
+```
+
 Inspect and steer it:
 
 ```sh

@@ -10,6 +10,7 @@ const names = [
 	"PI_REASONING_LEVEL",
 	"PI_PEER_PARENT_SESSION_ID",
 	"PI_PEER_PARENT",
+	"PI_PEER_RESERVATION_ID",
 	"PI_PEER_TASK_ID",
 	"TMUX_SESSION_NAME",
 ] as const;
@@ -37,6 +38,7 @@ describe("createPeerLauncher", () => {
 		const launcher = createPeerLauncher({
 			prompt: "child task",
 			parentSessionId: "caller",
+			reservationId: "33333333-3333-4333-8333-333333333333",
 			cwd: "/workspace/project",
 			name: "child-task",
 		});
@@ -44,6 +46,7 @@ describe("createPeerLauncher", () => {
 		expect(script).toContain("'PI_PEER_PARENT_SESSION_ID=caller'");
 		expect(script).toContain("'PI_PEER_PARENT=caller'");
 		expect(script).toContain("'PI_PEER_TASK_ID=child-task'");
+		expect(script).toContain("'PI_PEER_RESERVATION_ID=33333333-3333-4333-8333-333333333333'");
 		expect(script).not.toContain("grandparent");
 		expect(script).not.toContain("caller-model");
 		expect(script).not.toContain("/tmp/caller.jsonl");

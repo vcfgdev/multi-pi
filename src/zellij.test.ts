@@ -79,6 +79,36 @@ describe("spawnZellijPeer", () => {
 			parentSessionId: "parent",
 			cwd: "/tmp",
 			name: "worker",
-		}, { async run(_command, args) { return { stdout: args[0] === "--version" ? "zellij 0.45.0\n" : "" }; } })).rejects.toThrow("Zellij 0.45+");
+		}, { async run(_command, args) {
+			if (args[0] === "--version") return { stdout: "zellij 0.45.0\n" };
+			if (args[1] === "list-panes") return { stdout: JSON.stringify([
+				{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0 },
+			]) };
+			return { stdout: "" };
+		} })).rejects.toThrow("Zellij 0.45+");
+	});
+
+	test("adds default peers below the bottom-most pane in the right column", async () => {
+		process.env.ZELLIJ = "1";
+		process.env.ZELLIJ_PANE_ID = "7";
+		const calls: string[][] = [];
+		let spawnEnvironment: NodeJS.ProcessEnv | undefined;
+		await spawnZellijPeer({ prompt: "task", parentSessionId: "parent", cwd: "/tmp", name: "worker" }, {
+			async run(_command, args, options) {
+				calls.push(args);
+				if (args[0] === "--version") return { stdout: "zellij 0.45.1\n" };
+				if (args[1] === "list-panes") return { stdout: JSON.stringify([
+					{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0 },
+					{ id: 8, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 0 },
+					{ id: 9, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 20 },
+				]) };
+				if (args[1] === "new-pane") spawnEnvironment = options?.env;
+				return { stdout: args[1] === "new-pane" ? "terminal_10\n" : "" };
+			},
+		});
+		expect(calls[2]).toContain("--direction");
+		expect(calls[2]).toContain("down");
+		expect(spawnEnvironment?.ZELLIJ_PANE_ID).toBe("9");
+		rmSync(dirname(calls[2].at(-1)!), { recursive: true, force: true });
 	});
 });

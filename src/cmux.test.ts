@@ -87,4 +87,28 @@ describe("spawnCmuxPeer", () => {
 			name: "worker",
 		})).rejects.toThrow("inside a cmux surface");
 	});
+
+	test("adds default peers below the bottom-most pane in the right column", async () => {
+		process.env.CMUX_SOCKET_PATH = "/tmp/cmux.sock";
+		process.env.CMUX_WORKSPACE_ID = "workspace:1";
+		process.env.CMUX_SURFACE_ID = "surface:1";
+		const calls: string[][] = [];
+		await spawnCmuxPeer({ prompt: "task", parentSessionId: "parent", cwd: "/tmp", name: "worker" }, {
+			async run(_command, args) {
+				calls.push(args);
+				if (args[1] === "surface.list") return { stdout: JSON.stringify({ surfaces: [
+					{ ref: "surface:1", pane_ref: "pane:1" },
+				] }) };
+				if (args[1] === "pane.list") return { stdout: JSON.stringify({ panes: [
+					{ ref: "pane:1", pixel_frame: { x: 0, y: 0 }, selected_surface_ref: "surface:1" },
+					{ ref: "pane:2", pixel_frame: { x: 800, y: 0 }, selected_surface_ref: "surface:2" },
+					{ ref: "pane:3", pixel_frame: { x: 800, y: 400 }, selected_surface_ref: "surface:3" },
+				] }) };
+				return { stdout: args[1] === "surface.split" ? JSON.stringify({ result: { surface_ref: "surface:4" } }) : "" };
+			},
+		});
+		expect(JSON.parse(calls[2][2])).toMatchObject({ surface_id: "surface:3", direction: "down", focus: false });
+		const launcherPath = JSON.parse(calls[2][2]).initial_command.match(/^sh '([^']+)'$/)?.[1];
+		rmSync(dirname(launcherPath), { recursive: true, force: true });
+	});
 });

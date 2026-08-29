@@ -13,10 +13,43 @@ export async function spawnCmuxPeer(
 
 	const launcher = createPeerLauncher(input);
 	try {
+		let source = sourceSurface;
+		let direction = input.direction;
+		if (!direction) {
+			const surfacesResponse = JSON.parse((await runner.run("cmux", [
+				"rpc", "surface.list", JSON.stringify({ workspace_id: workspace }),
+			])).stdout) as { surfaces?: Array<Record<string, unknown>>; result?: { surfaces?: Array<Record<string, unknown>> } };
+			const panesResponse = JSON.parse((await runner.run("cmux", [
+				"rpc", "pane.list", JSON.stringify({ workspace_id: workspace }),
+			])).stdout) as { panes?: Array<Record<string, unknown>>; result?: { panes?: Array<Record<string, unknown>> } };
+			const surfaces = surfacesResponse.surfaces ?? surfacesResponse.result?.surfaces ?? [];
+			const panes = panesResponse.panes ?? panesResponse.result?.panes ?? [];
+			const sourcePaneRef = surfaces.find((surface) => surface.ref === sourceSurface || surface.id === sourceSurface)?.pane_ref;
+			const sourcePane = panes.find((pane) => pane.ref === sourcePaneRef || pane.id === sourcePaneRef);
+			const sourceFrame = sourcePane?.pixel_frame as { x?: number } | undefined;
+			const rightColumn = typeof sourceFrame?.x === "number"
+				? panes.filter((pane) => {
+					const frame = pane.pixel_frame as { x?: number } | undefined;
+					return typeof frame?.x === "number" && frame.x > sourceFrame.x!;
+				}).sort((a, b) => {
+					const aFrame = a.pixel_frame as { y?: number } | undefined;
+					const bFrame = b.pixel_frame as { y?: number } | undefined;
+					return (bFrame?.y ?? 0) - (aFrame?.y ?? 0);
+				})
+				: [];
+			const anchor = rightColumn[0];
+			if (anchor) {
+				const selectedSurface = anchor.selected_surface_ref ?? anchor.selected_surface_id;
+				if (typeof selectedSurface === "string") source = selectedSurface;
+				direction = "down";
+			} else {
+				direction = "right";
+			}
+		}
 		const parameters = {
 			workspace_id: workspace,
-			surface_id: sourceSurface,
-			direction: input.direction ?? "right",
+			surface_id: source,
+			direction: direction ?? "right",
 			type: "terminal",
 			working_directory: input.cwd,
 			initial_command: launcher.shellCommand,

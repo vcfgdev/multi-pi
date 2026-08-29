@@ -10,6 +10,7 @@ import {
 	readSync,
 	renameSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -22,6 +23,10 @@ export const PEER_STALE_MS = 20_000;
 export const MAX_MESSAGE_LENGTH = 50_000;
 export const MAX_REGISTRATION_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_ENVELOPE_FILE_BYTES = 256 * 1024;
+export const MAX_DIRECT_PEERS = 7;
+const PEER_RESERVATION_STALE_MS = 60_000;
+const PEER_RESERVATION_MAX_BYTES = 4 * 1024;
+const PEER_RESERVATION_LOCK_STALE_MS = 10_000;
 
 export type PeerActivity = "idle" | "thinking" | "tool";
 export type PeerMessageKind = "question" | "status" | "result" | "steer";
@@ -82,6 +87,12 @@ export interface PeerPublication {
 export interface PeerSender {
 	sessionId: string;
 	sessionName?: string;
+}
+
+interface PeerReservation {
+	id: string;
+	parentSessionId: string;
+	createdAt: string;
 }
 
 export function defaultPeerStateRoot(): string {
@@ -197,6 +208,8 @@ export class PeerEndpoint {
 	private readonly now: () => Date;
 	private readonly sessionsDirectory: string;
 	private readonly inboxesDirectory: string;
+	private readonly reservationsDirectory: string;
+	private readonly reservationLock: string;
 	private registrationPath?: string;
 	private registration?: PeerRegistration;
 	private readonly startedAt: string;
@@ -214,10 +227,59 @@ export class PeerEndpoint {
 		this.endpointId = endpointId;
 		this.sessionsDirectory = join(root, "sessions");
 		this.inboxesDirectory = join(root, "inboxes");
+		this.reservationsDirectory = join(root, "reservations");
+		this.reservationLock = join(root, "reservations.lock");
 		this.startedAt = now().toISOString();
 		ensurePrivateDirectory(root);
 		ensurePrivateDirectory(this.sessionsDirectory);
 		ensurePrivateDirectory(this.inboxesDirectory);
+		ensurePrivateDirectory(this.reservationsDirectory);
+	}
+
+	reserveDirectPeer(parentSessionId: string): string {
+		return this.withReservationLock(() => {
+			const now = this.now().getTime();
+			const pending = new Set<string>();
+			for (const file of readdirSync(this.reservationsDirectory)) {
+				if (!file.endsWith(".json")) continue;
+				const path = join(this.reservationsDirectory, file);
+				try {
+					const reservation = readJsonBounded(path, PEER_RESERVATION_MAX_BYTES) as Partial<PeerReservation>;
+					const createdAt = typeof reservation.createdAt === "string" ? Date.parse(reservation.createdAt) : Number.NaN;
+					if (typeof reservation.id !== "string" || typeof reservation.parentSessionId !== "string"
+						|| !Number.isFinite(createdAt) || now - createdAt > PEER_RESERVATION_STALE_MS) {
+						rmSync(path, { force: true });
+						continue;
+					}
+					if (reservation.parentSessionId === parentSessionId) pending.add(reservation.id);
+				} catch {
+					rmSync(path, { force: true });
+				}
+			}
+			const live = new Set(this.list()
+				.filter((peer) => peer.parentSessionId === parentSessionId)
+				.map((peer) => peer.sessionId));
+			if (live.size + pending.size >= MAX_DIRECT_PEERS) {
+				throw new Error(`A Pi session may have at most ${MAX_DIRECT_PEERS} live direct peers`);
+			}
+			const reservation: PeerReservation = {
+				id: randomUUID(),
+				parentSessionId,
+				createdAt: this.now().toISOString(),
+			};
+			writeAtomic(
+				join(this.reservationsDirectory, `${reservation.id}.json`),
+				reservation,
+				this.pid,
+				PEER_RESERVATION_MAX_BYTES,
+			);
+			return reservation.id;
+		});
+	}
+
+	releasePeerReservation(id: string): void {
+		if (!isEndpointId(id)) return;
+		rmSync(join(this.reservationsDirectory, `${id}.json`), { force: true });
 	}
 
 	publish(publication: PeerPublication): PeerRegistration {
@@ -419,5 +481,31 @@ export class PeerEndpoint {
 
 	private inboxDirectory(sessionId: string): string {
 		return join(this.inboxesDirectory, sessionDirectoryName(sessionId));
+	}
+
+	private withReservationLock<T>(operation: () => T): T {
+		const sleeper = new Int32Array(new SharedArrayBuffer(4));
+		for (let attempt = 0; attempt < 100; attempt += 1) {
+			try {
+				mkdirSync(this.reservationLock, { mode: 0o700 });
+				try {
+					return operation();
+				} finally {
+					rmSync(this.reservationLock, { recursive: true, force: true });
+				}
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+				try {
+					if (this.now().getTime() - statSync(this.reservationLock).mtimeMs > PEER_RESERVATION_LOCK_STALE_MS) {
+						rmSync(this.reservationLock, { recursive: true, force: true });
+						continue;
+					}
+				} catch {
+					continue;
+				}
+				Atomics.wait(sleeper, 0, 0, 10);
+			}
+		}
+		throw new Error("Timed out reserving a Pi peer slot");
 	}
 }

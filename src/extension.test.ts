@@ -3,7 +3,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import multiPi from "../extensions/index.ts";
 import type { PeerEnvelope, PeerPublication, PeerRegistration } from "./protocol.ts";
 
-const lineageVariables = ["PI_PEER_PARENT_SESSION_ID", "PI_PEER_PARENT", "PI_PEER_TASK_ID"] as const;
+const lineageVariables = ["PI_PEER_PARENT_SESSION_ID", "PI_PEER_PARENT", "PI_PEER_RESERVATION_ID", "PI_PEER_TASK_ID"] as const;
 const originalEnvironment = Object.fromEntries(lineageVariables.map((name) => [name, process.env[name]]));
 
 afterEach(() => {
@@ -37,6 +37,7 @@ describe("multi-pi runtime extension", () => {
 	test("registers no tools while publishing presence, delivering mail, and showing child status", async () => {
 		process.env.PI_PEER_PARENT_SESSION_ID = "parent-session";
 		process.env.PI_PEER_PARENT = "legacy-parent";
+		process.env.PI_PEER_RESERVATION_ID = "33333333-3333-4333-8333-333333333333";
 		process.env.PI_PEER_TASK_ID = "task-7";
 		const handlers = new Map<string, (event: any, ctx: any) => Promise<any>>();
 		const publications: PeerPublication[] = [];
@@ -50,6 +51,7 @@ describe("multi-pi runtime extension", () => {
 		const widgetOptions = new Map<string, unknown>();
 		let receiver: ((envelope: PeerEnvelope) => Promise<void> | void) | undefined;
 		let removed = false;
+		const releasedReservations: string[] = [];
 		let widgetRenderRequests = 0;
 		let widgetNow = Date.parse("2026-08-27T10:01:00Z");
 		let entries: any[] = [{ type: "message", message: { role: "user", content: "Initial task" } }];
@@ -65,6 +67,7 @@ describe("multi-pi runtime extension", () => {
 				receiver = handler;
 				return 0;
 			},
+			releasePeerReservation(id: string) { releasedReservations.push(id); },
 			remove() { removed = true; },
 		};
 		const pi = {
@@ -115,6 +118,8 @@ describe("multi-pi runtime extension", () => {
 		}]);
 		expect(process.env.PI_PEER_PARENT_SESSION_ID).toBe("parent-session");
 		expect(process.env.PI_PEER_PARENT).toBe("parent-session");
+		expect(releasedReservations).toEqual(["33333333-3333-4333-8333-333333333333"]);
+		expect(process.env.PI_PEER_RESERVATION_ID).toBeUndefined();
 		expect(typeof widgets.get("multi-pi")).toBe("function");
 		expect(widgetOptions.get("multi-pi")).toEqual({ placement: "aboveEditor" });
 		const idleWidget = renderWidget()!;

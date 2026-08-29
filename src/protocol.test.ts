@@ -89,7 +89,7 @@ describe("PeerEndpoint", () => {
 		expect(await second.receive((message) => { received.push(message); })).toBe(0);
 		expect(received).toEqual([sent]);
 		expect(readdirSync(targetInbox)).toEqual([]);
-		expect(readdirSync(stateRoot).sort()).toEqual(["inboxes", "sessions"]);
+		expect(readdirSync(stateRoot).sort()).toEqual(["inboxes", "reservations", "sessions"]);
 		expect(sent.from).toEqual({ sessionId: "session-alpha", sessionName: "Planner" });
 		expect(sent.delivery).toBe("followUp");
 		expect(first.send({
@@ -97,6 +97,27 @@ describe("PeerEndpoint", () => {
 			kind: "steer",
 			message: "Focus on the shared verifier.",
 		}).delivery).toBe("steer");
+	});
+
+	test("atomically reserves the seventh direct-peer slot while another peer starts", async () => {
+		const stateRoot = root();
+		for (let index = 0; index < 6; index += 1) {
+			const peer = new PeerEndpoint(stateRoot, process.pid, undefined, `${index}1111111-1111-4111-8111-111111111111`);
+			peer.publish({
+				...publication(`peer-${index}`, `Peer ${index}`),
+				parentSessionId: "parent-session",
+			});
+		}
+		const endpoint = new PeerEndpoint(stateRoot);
+		const attempts = await Promise.allSettled([
+			Promise.resolve().then(() => endpoint.reserveDirectPeer("parent-session")),
+			Promise.resolve().then(() => endpoint.reserveDirectPeer("parent-session")),
+		]);
+		expect(attempts.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+		expect(attempts.filter(({ status }) => status === "rejected")).toHaveLength(1);
+		const reservation = attempts.find((attempt) => attempt.status === "fulfilled") as PromiseFulfilledResult<string>;
+		endpoint.releasePeerReservation(reservation.value);
+		expect(endpoint.reserveDirectPeer("parent-session")).toBeString();
 	});
 
 	test("requeues handler failures and recovers claims from dead endpoints", async () => {

@@ -59,6 +59,7 @@ describe("spawnTmuxPeer", () => {
 
 	test("defaults to a right-hand pane and fails clearly outside tmux", async () => {
 		process.env.TMUX = "/tmp/tmux/default,1,0";
+		process.env.TMUX_PANE = "%1";
 		const calls: string[][] = [];
 		await spawnTmuxPeer({
 			prompt: "task",
@@ -68,12 +69,13 @@ describe("spawnTmuxPeer", () => {
 		}, {
 			async run(_command, args) {
 				calls.push(args);
-				return { stdout: calls.length === 1 ? "%2" : "" };
+				if (args[0] === "list-panes") return { stdout: "%1\t0\t0\n" };
+				return { stdout: args[0] === "split-window" ? "%2" : "" };
 			},
 		});
-		expect(calls[0]).toContain("-h");
-		expect(calls[1]).toEqual(["select-pane", "-t", "%2", "-T", "worker"]);
-		rmSync(dirname(calls[0].at(-1)!), { recursive: true, force: true });
+		expect(calls[1]).toContain("-h");
+		expect(calls[2]).toEqual(["select-pane", "-t", "%2", "-T", "worker"]);
+		rmSync(dirname(calls[1].at(-1)!), { recursive: true, force: true });
 
 		delete process.env.TMUX;
 		expect(spawnTmuxPeer({
@@ -82,5 +84,22 @@ describe("spawnTmuxPeer", () => {
 			cwd: "/tmp",
 			name: "worker",
 		})).rejects.toThrow("inside tmux");
+	});
+
+	test("adds default peers below the bottom-most pane in the right column", async () => {
+		process.env.TMUX = "/tmp/tmux/default,1,0";
+		process.env.TMUX_PANE = "%1";
+		const calls: string[][] = [];
+		await spawnTmuxPeer({ prompt: "task", parentSessionId: "parent", cwd: "/tmp", name: "worker" }, {
+			async run(_command, args) {
+				calls.push(args);
+				if (args[0] === "list-panes") return { stdout: "%1\t0\t0\n%2\t80\t0\n%3\t80\t20\n" };
+				return { stdout: args[0] === "split-window" ? "%4" : "" };
+			},
+		});
+		expect(calls[1]).toContain("-t");
+		expect(calls[1]).toContain("%3");
+		expect(calls[1]).toContain("-v");
+		rmSync(dirname(calls[1].at(-1)!), { recursive: true, force: true });
 	});
 });

@@ -25,6 +25,7 @@ function harness(environment: NodeJS.ProcessEnv = {}) {
 	const stderr: string[] = [];
 	const spawned: unknown[] = [];
 	const sent: unknown[] = [];
+	const released: string[] = [];
 	const current = registration();
 	const reviewer = registration({
 		endpointId: "22222222-2222-4222-8222-222222222222",
@@ -41,6 +42,8 @@ function harness(environment: NodeJS.ProcessEnv = {}) {
 		spawn: async (input) => { spawned.push(input); return { paneId: "pane-9" }; },
 		endpoint: {
 			list: () => [current, reviewer],
+			reserveDirectPeer: () => "33333333-3333-4333-8333-333333333333",
+			releasePeerReservation: (id) => released.push(id),
 			resolve: (target) => target.toLowerCase() === "reviewer" ? reviewer : current,
 			sendFrom(sender, input) {
 				sent.push({ sender, input });
@@ -50,7 +53,7 @@ function harness(environment: NodeJS.ProcessEnv = {}) {
 		stdout: (text) => stdout.push(text),
 		stderr: (text) => stderr.push(text),
 	};
-	return { dependencies, stdout, stderr, spawned, sent };
+	return { dependencies, stdout, stderr, spawned, sent, released };
 }
 
 describe("pi-peer CLI", () => {
@@ -77,12 +80,30 @@ describe("pi-peer CLI", () => {
 			direction: "right",
 			model: "sonnet:high",
 			parentSessionId: "caller-session",
+			reservationId: "33333333-3333-4333-8333-333333333333",
 		}]);
 
 		const root = harness({});
 		expect(await runCli(["spawn", "--name", "independent", "--prompt", "task", "--json"], root.dependencies)).toBe(0);
 		expect(root.spawned).toEqual([{ prompt: "task", name: "independent", cwd: "/workspace/project" }]);
 		expect(JSON.parse(root.stdout.join(""))).toMatchObject({ root: true, name: "independent" });
+	});
+
+	test("limits each session to seven live direct peers", async () => {
+		const test = harness({ PI_SESSION_ID: "caller-session" });
+		test.dependencies.endpoint!.reserveDirectPeer = () => {
+			throw new Error("A Pi session may have at most 7 live direct peers");
+		};
+		expect(await runCli(["spawn", "--name", "peer-8", "--prompt", "task"], test.dependencies)).toBe(1);
+		expect(test.stderr.join("")).toContain("at most 7 live direct peers");
+		expect(test.spawned).toEqual([]);
+	});
+
+	test("releases a reserved peer slot when pane creation fails", async () => {
+		const test = harness({ PI_SESSION_ID: "caller-session" });
+		test.dependencies.spawn = async () => { throw new Error("split failed"); };
+		expect(await runCli(["spawn", "--name", "worker", "--prompt", "task"], test.dependencies)).toBe(1);
+		expect(test.released).toEqual(["33333333-3333-4333-8333-333333333333"]);
 	});
 
 	test("lists and inspects bounded peer state", async () => {

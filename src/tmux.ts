@@ -8,10 +8,30 @@ export async function spawnTmuxPeer(
 	if (!process.env.TMUX) {
 		throw new Error("pi-peer spawn must run inside tmux");
 	}
+	let targetPane = process.env.TMUX_PANE;
+	let direction = input.direction;
+	if (!direction && targetPane) {
+		const panes = (await runner.run("tmux", [
+			"list-panes", "-t", targetPane, "-F", "#{pane_id}\t#{pane_left}\t#{pane_top}",
+		])).stdout.trim().split("\n").map((line) => {
+			const [id, left, top] = line.split("\t");
+			return { id, left: Number(left), top: Number(top) };
+		});
+		const source = panes.find(({ id }) => id === targetPane);
+		const rightColumn = source
+			? panes.filter((pane) => pane.left > source.left).sort((a, b) => b.top - a.top)
+			: [];
+		if (rightColumn[0]?.id) {
+			targetPane = rightColumn[0].id;
+			direction = "down";
+		} else {
+			direction = "right";
+		}
+	}
 	const launcher = createPeerLauncher(input);
 	const args = ["split-window", "-d", "-P", "-F", "#{pane_id}", "-c", input.cwd];
-	if (process.env.TMUX_PANE) args.push("-t", process.env.TMUX_PANE);
-	args.push(input.direction === "down" ? "-v" : "-h");
+	if (targetPane) args.push("-t", targetPane);
+	args.push(direction === "down" ? "-v" : "-h");
 	args.push("--", "sh", launcher.path);
 	try {
 		const result = await runner.run("tmux", args);

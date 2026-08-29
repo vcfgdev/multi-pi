@@ -2,12 +2,12 @@ import { execFile } from "node:child_process";
 import { createPeerLauncher, peerPaneTitle, removePeerLauncher } from "./launcher.ts";
 
 export interface CommandRunner {
-	run(command: string, args: string[]): Promise<{ stdout: string }>;
+	run(command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }): Promise<{ stdout: string }>;
 }
 
 export const defaultCommandRunner: CommandRunner = {
-	run: (command, args) => new Promise((resolve, reject) => {
-		execFile(command, args, { maxBuffer: 1024 * 1024 }, (error, stdout) => {
+	run: (command, args, options) => new Promise((resolve, reject) => {
+		execFile(command, args, { maxBuffer: 1024 * 1024, ...options }, (error, stdout) => {
 			if (error) reject(error);
 			else resolve({ stdout });
 		});
@@ -21,6 +21,7 @@ export interface SpawnPeerInput {
 	name: string;
 	direction?: "right" | "down";
 	model?: string;
+	reservationId?: string;
 }
 
 export async function spawnZellijPeer(
@@ -35,12 +36,38 @@ export async function spawnZellijPeer(
 	if (!version || Number(version[1]) === 0 && Number(version[2]) < 45) {
 		throw new Error("pi-peer spawn requires Zellij 0.45 or newer");
 	}
+	let anchorPaneId: number | undefined;
+	let direction = input.direction;
+	if (!direction) {
+		const panes = JSON.parse((await runner.run("zellij", ["action", "list-panes", "--json"])).stdout) as Array<{
+			id: number;
+			is_plugin: boolean;
+			is_floating: boolean;
+			tab_id: number;
+			pane_x: number;
+			pane_y: number;
+		}>;
+		const sourceId = Number(process.env.ZELLIJ_PANE_ID);
+		const source = panes.find((pane) => !pane.is_plugin && pane.id === sourceId);
+		const rightColumn = source
+			? panes.filter((pane) => !pane.is_plugin && !pane.is_floating && pane.tab_id === source.tab_id && pane.pane_x > source.pane_x)
+				.sort((a, b) => b.pane_y - a.pane_y)
+			: [];
+		if (rightColumn[0]) {
+			anchorPaneId = rightColumn[0].id;
+			direction = "down";
+		} else {
+			direction = "right";
+		}
+	}
 	const launcher = createPeerLauncher(input);
 	const args = ["action", "new-pane", "--no-focus", "--close-on-exit", "--cwd", input.cwd, "--name", peerPaneTitle(input)];
-	if (input.direction) args.push("--direction", input.direction);
+	args.push("--direction", direction ?? "right");
 	args.push("--", "sh", launcher.path);
 	try {
-		const result = await runner.run("zellij", args);
+		const result = await runner.run("zellij", args, anchorPaneId === undefined ? undefined : {
+			env: { ...process.env, ZELLIJ_PANE_ID: String(anchorPaneId) },
+		});
 		const paneId = result.stdout.trim();
 		if (!paneId) throw new Error("Zellij did not return the created pane ID; Zellij 0.45+ is required");
 		return { paneId };

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import {
+	MAX_DIRECT_PEERS,
 	MAX_MESSAGE_LENGTH,
 	PeerEndpoint,
 	publicPeer,
@@ -28,6 +29,8 @@ const COMMAND_HELP: Record<string, string> = {
 
 Open a full interactive Pi session in a neighboring cmux, Zellij, or tmux pane.
 When run from Pi's Bash tool, the current PI_SESSION_ID becomes the direct parent.
+By default, peers form a vertical column to the right of the current pane.
+Each session may have at most ${MAX_DIRECT_PEERS} live direct peers.
 
 Options:
   --name <name>          Pane and Pi session name (required)
@@ -62,6 +65,8 @@ Options:
 
 interface CliEndpoint {
 	list(): PeerRegistration[];
+	reserveDirectPeer(parentSessionId: string): string;
+	releasePeerReservation(id: string): void;
 	resolve(target: string): PeerRegistration;
 	sendFrom(sender: PeerSender, input: {
 		target: string;
@@ -192,14 +197,22 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 				const direction = flag(parsed, "direction") as "right" | "down" | undefined;
 				if (direction && direction !== "right" && direction !== "down") throw new Error("--direction must be right or down");
 				const prompt = requireText(flag(parsed, "prompt") ?? await readStdin(), "A prompt via --prompt or stdin", MAX_MESSAGE_LENGTH);
-				const result = await spawn({
-					prompt,
-					name,
-					cwd: flag(parsed, "cwd") ?? cwd(),
-					...(direction ? { direction } : {}),
-					...(flag(parsed, "model") ? { model: flag(parsed, "model") } : {}),
-					...(env.PI_SESSION_ID ? { parentSessionId: env.PI_SESSION_ID } : {}),
-				});
+				const reservationId = env.PI_SESSION_ID ? getEndpoint().reserveDirectPeer(env.PI_SESSION_ID) : undefined;
+				let result: { paneId: string };
+				try {
+					result = await spawn({
+						prompt,
+						name,
+						cwd: flag(parsed, "cwd") ?? cwd(),
+						...(direction ? { direction } : {}),
+						...(flag(parsed, "model") ? { model: flag(parsed, "model") } : {}),
+						...(env.PI_SESSION_ID ? { parentSessionId: env.PI_SESSION_ID } : {}),
+						...(reservationId ? { reservationId } : {}),
+					});
+				} catch (error) {
+					if (reservationId) getEndpoint().releasePeerReservation(reservationId);
+					throw error;
+				}
 				const value = { spawned: true, paneId: result.paneId, name, root: !env.PI_SESSION_ID };
 				output(value, `Spawned ${name} in pane ${result.paneId}${value.root ? " as an independent root" : ""}.`, jsonFlag(parsed), stdout);
 				return 0;

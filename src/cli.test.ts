@@ -26,6 +26,7 @@ function harness(environment: NodeJS.ProcessEnv = {}) {
 	const spawned: unknown[] = [];
 	const sent: unknown[] = [];
 	const released: string[] = [];
+	const closed: PeerRegistration[] = [];
 	const current = registration();
 	const reviewer = registration({
 		endpointId: "22222222-2222-4222-8222-222222222222",
@@ -33,6 +34,7 @@ function harness(environment: NodeJS.ProcessEnv = {}) {
 		sessionName: "Reviewer",
 		activity: "thinking",
 		parentSessionId: "current-session",
+		mux: { kind: "tmux", paneId: "%2" },
 		transcript: [{ sequence: 1, role: "assistant", text: "Checking auth." }],
 	});
 	const dependencies: CliDependencies = {
@@ -40,6 +42,7 @@ function harness(environment: NodeJS.ProcessEnv = {}) {
 		cwd: () => "/workspace/project",
 		readStdin: async () => "stdin body",
 		spawn: async (input) => { spawned.push(input); return { paneId: "pane-9" }; },
+		close: async (peer) => { closed.push(peer); },
 		endpoint: {
 			list: () => [current, reviewer],
 			reserveDirectPeer: () => "33333333-3333-4333-8333-333333333333",
@@ -53,7 +56,7 @@ function harness(environment: NodeJS.ProcessEnv = {}) {
 		stdout: (text) => stdout.push(text),
 		stderr: (text) => stderr.push(text),
 	};
-	return { dependencies, stdout, stderr, spawned, sent, released };
+	return { dependencies, stdout, stderr, spawned, sent, released, closed };
 }
 
 describe("pi-peer CLI", () => {
@@ -145,6 +148,25 @@ describe("pi-peer CLI", () => {
 			sender: expect.objectContaining({ sessionId: "current-session" }),
 			input: { target: "legacy-parent", kind: "status", message: "Still working", delivery: "steer" },
 		}]);
+	});
+
+	test("closes one or all direct peer panes without closing unrelated sessions", async () => {
+		const single = harness({ PI_SESSION_ID: "current-session" });
+		expect(await runCli(["close", "Reviewer", "--json"], single.dependencies)).toBe(0);
+		expect(single.closed.map((peer) => peer.sessionId)).toEqual(["review-session"]);
+		expect(JSON.parse(single.stdout.join("")).closed).toEqual([
+			{ sessionId: "review-session", name: "Reviewer", paneId: "%2" },
+		]);
+
+		const all = harness({ PI_SESSION_ID: "current-session" });
+		expect(await runCli(["close", "--all"], all.dependencies)).toBe(0);
+		expect(all.closed.map((peer) => peer.sessionId)).toEqual(["review-session"]);
+		expect(all.stdout.join("")).toContain("Closed 1 peer pane.");
+
+		const unrelated = harness({ PI_SESSION_ID: "current-session" });
+		expect(await runCli(["close", "Current"], unrelated.dependencies)).toBe(1);
+		expect(unrelated.stderr.join("")).toContain("Can only close a direct peer");
+		expect(unrelated.closed).toEqual([]);
 	});
 
 	test("reports actionable argument errors", async () => {

@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-cli="$directory/../dist/pi-peer.js"
+cli="$directory/../src/cli.ts"
 if [ ! -f "$cli" ]; then
-	cli="$directory/../src/cli.ts"
+	cli="$directory/../dist/pi-peer.js"
 fi
 exec node "$cli" "$@"

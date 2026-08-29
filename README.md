@@ -58,6 +58,7 @@ Use command-level help for exact syntax:
 pi-peer --help
 pi-peer spawn --help
 pi-peer send --help
+pi-peer close --help
 ```
 
 Spawn a peer with a task on stdin:
@@ -97,6 +98,9 @@ pi-peer inspect refresh-race
 pi-peer send refresh-race --kind steer <<'EOF'
 The refresh token may remain nullable; focus on duplicate outbound requests.
 EOF
+pi-peer close refresh-race
+# Or close every direct peer:
+pi-peer close --all
 ```
 
 A delegated peer can omit its parent target when returning a result:

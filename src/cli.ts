@@ -10,7 +10,7 @@ import {
 	type PeerRegistration,
 	type PeerSender,
 } from "./protocol.ts";
-import { spawnPeer } from "./mux.ts";
+import { closePeerPane, spawnPeer } from "./mux.ts";
 import type { SpawnPeerInput } from "./zellij.ts";
 
 const HELP = `pi-peer — coordinate interactive Pi sessions
@@ -20,6 +20,8 @@ Usage:
   pi-peer list [--json]
   pi-peer inspect <peer> [--limit <records>] [--json]
   pi-peer send [peer] --kind <kind> [options] [--message <text>]
+  pi-peer close <peer> [--json]
+  pi-peer close --all [--json]
 
 Use "pi-peer <command> --help" for command details. Prompts and messages may be
 provided on stdin. A peer launched outside Pi starts as an independent root.`;
@@ -61,6 +63,15 @@ Options:
   --task-id <id>         Task correlation ID (defaults to current peer task)
   --message <text>       Message body; otherwise read stdin
   --json                 Print a JSON result`,
+	close: `Usage: pi-peer close <peer> [--json]
+       pi-peer close --all [--json]
+
+Close one or all live direct peers and their terminal panes. Roots, siblings,
+and unrelated panes cannot be closed.
+
+Options:
+  --all                 Close all live direct peers
+  --json                Print a JSON result`,
 };
 
 interface CliEndpoint {
@@ -82,6 +93,7 @@ export interface CliDependencies {
 	cwd?: () => string;
 	readStdin?: () => Promise<string>;
 	spawn?: (input: SpawnPeerInput) => Promise<{ paneId: string }>;
+	close?: (peer: PeerRegistration) => Promise<void>;
 	endpoint?: CliEndpoint;
 	stdout?: (text: string) => void;
 	stderr?: (text: string) => void;
@@ -92,7 +104,7 @@ interface ParsedArguments {
 	positionals: string[];
 }
 
-function parseArguments(args: string[], valued: Set<string>): ParsedArguments {
+function parseArguments(args: string[], valued: Set<string>, boolean = new Set<string>()): ParsedArguments {
 	const flags = new Map<string, string | true>();
 	const positionals: string[] = [];
 	for (let index = 0; index < args.length; index += 1) {
@@ -101,7 +113,7 @@ function parseArguments(args: string[], valued: Set<string>): ParsedArguments {
 			positionals.push(argument);
 			continue;
 		}
-		if (argument === "--help" || argument === "--json") {
+		if (argument === "--help" || argument === "--json" || boolean.has(argument.slice(2))) {
 			flags.set(argument.slice(2), true);
 			continue;
 		}
@@ -171,6 +183,7 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 	const cwd = dependencies.cwd ?? process.cwd;
 	const readStdin = dependencies.readStdin ?? readStandardInput;
 	const spawn = dependencies.spawn ?? spawnPeer;
+	const close = dependencies.close ?? closePeerPane;
 	let endpoint = dependencies.endpoint;
 	const getEndpoint = () => endpoint ??= new PeerEndpoint();
 	const stdout = dependencies.stdout ?? ((text) => process.stdout.write(text));
@@ -275,6 +288,45 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 				});
 				const value = { queued: true, acknowledged: false, messageId: envelope.id, target, kind: envelope.kind, delivery: envelope.delivery };
 				output(value, `Queued ${envelope.kind} for ${target} (${envelope.id}).`, jsonFlag(parsed), stdout);
+				return 0;
+			}
+			case "close": {
+				const parsed = parseArguments(commandArgs, new Set(), new Set(["all"]));
+				if (parsed.flags.has("help")) {
+					stdout(`${COMMAND_HELP.close}\n`);
+					return 0;
+				}
+				const all = parsed.flags.has("all");
+				if (all && parsed.positionals.length) throw new Error("pi-peer close --all does not accept a peer");
+				if (!all && parsed.positionals.length !== 1) throw new Error("pi-peer close requires one peer name or ID, or --all");
+				const sessionId = env.PI_SESSION_ID;
+				if (!sessionId) throw new Error("pi-peer close must run from a live Pi session");
+				let peers: PeerRegistration[];
+				if (all) {
+					peers = [...new Map(getEndpoint().list()
+						.filter((peer) => peer.parentSessionId === sessionId)
+						.map((peer) => [`${peer.mux?.kind}:${peer.mux?.session ?? ""}:${peer.mux?.paneId ?? peer.endpointId}`, peer])).values()];
+				} else {
+					const peer = getEndpoint().resolve(parsed.positionals[0]!);
+					if (peer.parentSessionId !== sessionId) {
+						throw new Error(`Can only close a direct peer of the current session: ${parsed.positionals[0]}`);
+					}
+					peers = [peer];
+				}
+				const missingPane = peers.find((peer) => !peer.mux?.paneId);
+				if (missingPane) throw new Error(`Peer has no live terminal pane: ${missingPane.sessionName ?? missingPane.sessionId}`);
+				await Promise.all(peers.map((peer) => close(peer)));
+				const closed = peers.map((peer) => ({
+					sessionId: peer.sessionId,
+					...(peer.sessionName ? { name: peer.sessionName } : {}),
+					paneId: peer.mux?.paneId,
+				}));
+				output(
+					{ closed },
+					closed.length === 0 ? "No live direct peers to close." : `Closed ${closed.length} peer pane${closed.length === 1 ? "" : "s"}.`,
+					jsonFlag(parsed),
+					stdout,
+				);
 				return 0;
 			}
 		}

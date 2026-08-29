@@ -25,7 +25,7 @@ lineage, and renders the parent status widget.
 Install the published Pi package:
 
 ```sh
-pi install npm:multi-pi
+pi install npm:@vcfgdev/multi-pi
 ```
 
 Or install a development checkout:

@@ -1,5 +1,5 @@
 {
-  "name": "multi-pi",
+  "name": "@vcfgdev/multi-pi",
   "version": "0.1.0",
   "description": "Interactive Pi sessions that can spawn, inspect, and message each other.",
   "license": "MIT",

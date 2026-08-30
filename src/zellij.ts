@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { createPeerLauncher, peerPaneTitle, removePeerLauncher } from "./launcher.ts";
+import type { SpawnPeerInput } from "./mux.ts";
 
 export interface CommandRunner {
 	run(command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }): Promise<{ stdout: string }>;
@@ -13,16 +14,6 @@ export const defaultCommandRunner: CommandRunner = {
 		});
 	}),
 };
-
-export interface SpawnPeerInput {
-	prompt: string;
-	parentSessionId?: string;
-	cwd: string;
-	name: string;
-	direction?: "right" | "down";
-	model?: string;
-	reservationId?: string;
-}
 
 export async function spawnZellijPeer(
 	input: SpawnPeerInput,

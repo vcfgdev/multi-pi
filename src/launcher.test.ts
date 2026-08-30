@@ -55,11 +55,17 @@ describe("createPeerLauncher", () => {
 	});
 
 	test("does not invent lineage for a root session", () => {
-		const launcher = createPeerLauncher({ prompt: "root task", cwd: "/tmp", name: "root" });
-		const command = readFileSync(launcher.path, "utf8").split("exec ")[1]!;
+		const launcher = createPeerLauncher({
+			prompt: "root task",
+			cwd: "/tmp",
+			name: "root",
+			piArgs: ["--tools", "read,bash", "--skill", "./skill with spaces"],
+		});
+		const command = readFileSync(launcher.path, "utf8").split("\n").find((line) => line.startsWith("exec "))!;
 		expect(command).not.toContain("PI_PEER_PARENT_SESSION_ID=");
 		expect(command).not.toContain("PI_PEER_PARENT=");
 		expect(command).not.toContain("PI_PEER_TASK_ID=");
+		expect(command).toContain("'pi' '--name' 'root' '--tools' 'read,bash' '--skill' './skill with spaces' '--' 'root task'");
 		removePeerLauncher(launcher);
 	});
 });

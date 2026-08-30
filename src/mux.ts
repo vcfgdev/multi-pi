@@ -1,7 +1,18 @@
 import { spawnCmuxPeer } from "./cmux.ts";
 import { spawnTmuxPeer } from "./tmux.ts";
 import type { PeerRegistration } from "./protocol.ts";
-import { defaultCommandRunner, spawnZellijPeer, type CommandRunner, type SpawnPeerInput } from "./zellij.ts";
+import { defaultCommandRunner, spawnZellijPeer, type CommandRunner } from "./zellij.ts";
+
+export interface SpawnPeerInput {
+	prompt: string;
+	parentSessionId?: string;
+	cwd: string;
+	name: string;
+	direction?: "right" | "down";
+	model?: string;
+	piArgs?: string[];
+	reservationId?: string;
+}
 
 export async function spawnPeer(input: SpawnPeerInput): Promise<{ paneId: string }> {
 	if (process.env.CMUX_SOCKET_PATH && process.env.CMUX_WORKSPACE_ID && process.env.CMUX_SURFACE_ID) {

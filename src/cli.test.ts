@@ -92,6 +92,60 @@ describe("pi-peer CLI", () => {
 		expect(JSON.parse(root.stdout.join(""))).toMatchObject({ root: true, name: "independent" });
 	});
 
+	test("forwards Pi options after -- without changing argument boundaries", async () => {
+		const test = harness({ PI_SESSION_ID: "caller-session" });
+		expect(await runCli([
+			"spawn", "--name", "reviewer", "--cwd", "/workspace/project", "--",
+			"--model", "sonnet:high", "--tools", "read,bash,grep",
+			"--skill", "./skills/first", "--skill", "./skills/with spaces",
+		], test.dependencies)).toBe(0);
+		expect(test.spawned).toEqual([{
+			prompt: "stdin body",
+			name: "reviewer",
+			cwd: "/workspace/project",
+			piArgs: [
+				"--model", "sonnet:high", "--tools", "read,bash,grep",
+				"--skill", "./skills/first", "--skill", "./skills/with spaces",
+			],
+			parentSessionId: "caller-session",
+			reservationId: "33333333-3333-4333-8333-333333333333",
+		}]);
+	});
+
+	test("rejects forwarded Pi options that break peer identity or lifecycle", async () => {
+		for (const option of ["--name", "--no-extensions", "--resume", "--mode=rpc", "--print"]) {
+			const test = harness();
+			expect(await runCli(["spawn", "--name", "worker", "--", option], test.dependencies)).toBe(1);
+			expect(test.stderr.join("")).toContain("cannot be used when spawning an interactive peer");
+			expect(test.spawned).toEqual([]);
+		}
+	});
+
+	test("rejects Pi messages, files, and missing option values after --", async () => {
+		for (const piArgs of [
+			["extra prompt"], ["@extra.md"], ["--model"], ["--extension"], ["--model", "--"],
+			["--use-theme", "--no-extensions"], ["--tui-mode", "--print"],
+		]) {
+			const test = harness();
+			expect(await runCli(["spawn", "--name", "worker", "--", ...piArgs], test.dependencies)).toBe(1);
+			expect(test.spawned).toEqual([]);
+		}
+	});
+
+	test("distinguishes Pi option values from options", async () => {
+		const test = harness();
+		expect(await runCli([
+			"spawn", "--name", "worker", "--",
+			"--append-system-prompt", "--help", "--custom=--name", "--custom-value", "value",
+		], test.dependencies)).toBe(0);
+		expect(test.spawned).toEqual([{
+			prompt: "stdin body",
+			name: "worker",
+			cwd: "/workspace/project",
+			piArgs: ["--append-system-prompt", "--help", "--custom=--name", "--custom-value", "value"],
+		}]);
+	});
+
 	test("limits each session to seven live direct peers", async () => {
 		const test = harness({ PI_SESSION_ID: "caller-session" });
 		test.dependencies.endpoint!.reserveDirectPeer = () => {

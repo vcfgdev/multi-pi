@@ -1,7 +1,7 @@
 import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SpawnPeerInput } from "./zellij.ts";
+import type { SpawnPeerInput } from "./mux.ts";
 
 const LAUNCHER_PREFIX = "pi-peer-launch-";
 const STALE_LAUNCHER_MS = 60 * 60 * 1_000;
@@ -91,6 +91,7 @@ export function createPeerLauncher(input: SpawnPeerInput): PeerLauncher {
 		"--name",
 		input.name,
 		...(input.model ? ["--model", input.model] : []),
+		...(input.piArgs ?? []),
 		"--",
 		input.prompt,
 	].map(shellQuote).join(" ");

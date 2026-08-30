@@ -10,13 +10,12 @@ import {
 	type PeerRegistration,
 	type PeerSender,
 } from "./protocol.ts";
-import { closePeerPane, spawnPeer } from "./mux.ts";
-import type { SpawnPeerInput } from "./zellij.ts";
+import { closePeerPane, spawnPeer, type SpawnPeerInput } from "./mux.ts";
 
 const HELP = `pi-peer — coordinate interactive Pi sessions
 
 Usage:
-  pi-peer spawn --name <name> [options] [--prompt <text>]
+  pi-peer spawn --name <name> [options] [-- <pi-options...>]
   pi-peer list [--json]
   pi-peer inspect <peer> [--limit <records>] [--json]
   pi-peer send [peer] --kind <kind> [options] [--message <text>]
@@ -27,18 +26,20 @@ Use "pi-peer <command> --help" for command details. Prompts and messages may be
 provided on stdin. A peer launched outside Pi starts as an independent root.`;
 
 const COMMAND_HELP: Record<string, string> = {
-	spawn: `Usage: pi-peer spawn --name <name> [options] [--prompt <text>]
+	spawn: `Usage: pi-peer spawn --name <name> [options] [-- <pi-options...>]
 
 Open a full interactive Pi session in a neighboring cmux, Zellij, or tmux pane.
 When run from Pi's Bash tool, the current PI_SESSION_ID becomes the direct parent.
 By default, peers form a vertical column to the right of the current pane.
 Each session may have at most ${MAX_DIRECT_PEERS} live direct peers.
+Pi options follow --; the task comes from --prompt or stdin. Restricted tool
+sets should include bash. Session-replacing Pi flags are rejected.
 
 Options:
   --name <name>          Pane and Pi session name (required)
   --cwd <directory>     Working directory (default: current directory)
   --direction <value>   right or down
-  --model <model>       Pi model selector
+  --model <model>       Deprecated alias for Pi's --model
   --prompt <text>       Initial task; otherwise read stdin
   --json                Print a JSON result`,
 	list: `Usage: pi-peer list [--json]
@@ -102,6 +103,67 @@ export interface CliDependencies {
 interface ParsedArguments {
 	flags: Map<string, string | true>;
 	positionals: string[];
+}
+
+const UNSUPPORTED_PEER_PI_OPTIONS = new Set([
+	"--name", "-n",
+	"--help", "-h", "--version", "-v", "--list-models",
+	"--print", "-p", "--export", "--mode",
+	"--no-extensions", "-ne",
+	"--continue", "-c", "--resume", "-r", "--session", "--session-id", "--fork", "--no-session",
+]);
+const VALUED_PI_OPTIONS = new Set([
+	"--provider", "--model", "--api-key", "--system-prompt", "--append-system-prompt",
+	"--session-dir", "--models", "--tools", "-t", "--exclude-tools", "-xt", "--thinking",
+	"--extension", "-e", "--skill", "--prompt-template", "--theme",
+]);
+const BOOLEAN_PI_OPTIONS = new Set([
+	"--no-tools", "-nt", "--no-builtin-tools", "-nbt", "--no-skills", "-ns",
+	"--no-prompt-templates", "-np", "--no-themes", "--no-context-files", "-nc",
+	"--verbose", "--approve", "-a", "--no-approve", "-na", "--offline",
+]);
+
+function splitForwardedArguments(args: string[]): { peerArgs: string[]; piArgs: string[] } {
+	const separator = args.indexOf("--");
+	if (separator === -1) return { peerArgs: args, piArgs: [] };
+	return { peerArgs: args.slice(0, separator), piArgs: args.slice(separator + 1) };
+}
+
+function validateForwardedPiArguments(args: string[]): void {
+	if (args.includes("--")) throw new Error("Pi options cannot contain --; pi-peer supplies the prompt separator");
+	for (let index = 0; index < args.length; index += 1) {
+		const argument = args[index]!;
+		if (argument.startsWith("@") || !argument.startsWith("-")) {
+			throw new Error("Pi messages and files must be provided through --prompt or stdin");
+		}
+		const equals = argument.indexOf("=");
+		const option = equals === -1 ? argument : argument.slice(0, equals);
+		if (UNSUPPORTED_PEER_PI_OPTIONS.has(option)) {
+			throw new Error(`${option} cannot be used when spawning an interactive peer`);
+		}
+		if (equals !== -1 || BOOLEAN_PI_OPTIONS.has(option)) continue;
+		if (option === "--use-theme") {
+			const value = args[index + 1];
+			if (value === undefined || value.startsWith("-")) throw new Error("--use-theme requires a value");
+			index += 1;
+			continue;
+		}
+		if (option === "--tui-mode") {
+			const value = args[index + 1];
+			if (value !== "regular" && value !== "fullscreen") throw new Error("--tui-mode requires regular or fullscreen");
+			index += 1;
+			continue;
+		}
+		if (VALUED_PI_OPTIONS.has(option)) {
+			if (index + 1 >= args.length) throw new Error(`${option} requires a value`);
+			index += 1;
+			continue;
+		}
+		if (argument.startsWith("--")) {
+			const value = args[index + 1];
+			if (value !== undefined && !value.startsWith("-") && !value.startsWith("@")) index += 1;
+		}
+	}
 }
 
 function parseArguments(args: string[], valued: Set<string>, boolean = new Set<string>()): ParsedArguments {
@@ -199,12 +261,14 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 
 		switch (command) {
 			case "spawn": {
-				const parsed = parseArguments(commandArgs, new Set(["name", "cwd", "direction", "model", "prompt"]));
+				const { peerArgs, piArgs } = splitForwardedArguments(commandArgs);
+				const parsed = parseArguments(peerArgs, new Set(["name", "cwd", "direction", "model", "prompt"]));
 				if (parsed.flags.has("help")) {
 					stdout(`${COMMAND_HELP.spawn}\n`);
 					return 0;
 				}
 				if (parsed.positionals.length) throw new Error("pi-peer spawn accepts the task through --prompt or stdin");
+				validateForwardedPiArguments(piArgs);
 				const name = requireText(flag(parsed, "name"), "--name", 80);
 				if (/[\r\n]/.test(name)) throw new Error("--name cannot contain a newline");
 				const direction = flag(parsed, "direction") as "right" | "down" | undefined;
@@ -219,6 +283,7 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 						cwd: flag(parsed, "cwd") ?? cwd(),
 						...(direction ? { direction } : {}),
 						...(flag(parsed, "model") ? { model: flag(parsed, "model") } : {}),
+						...(piArgs.length ? { piArgs } : {}),
 						...(env.PI_SESSION_ID ? { parentSessionId: env.PI_SESSION_ID } : {}),
 						...(reservationId ? { reservationId } : {}),
 					});

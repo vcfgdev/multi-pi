@@ -1,5 +1,6 @@
 import { createPeerLauncher, peerPaneTitle, removePeerLauncher } from "./launcher.ts";
-import { type CommandRunner, defaultCommandRunner, type SpawnPeerInput } from "./zellij.ts";
+import type { SpawnPeerInput } from "./mux.ts";
+import { type CommandRunner, defaultCommandRunner } from "./zellij.ts";
 
 export async function spawnTmuxPeer(
 	input: SpawnPeerInput,

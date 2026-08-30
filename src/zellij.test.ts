@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
+import { PeerPaneCleanupError } from "./protocol.ts";
 import { spawnZellijPeer } from "./zellij.ts";
 
 const originalZellij = process.env.ZELLIJ;
@@ -18,6 +19,7 @@ describe("spawnZellijPeer", () => {
 		process.env.ZELLIJ = "1";
 		process.env.ZELLIJ_PANE_ID = "7";
 		const invocations: Array<{ command: string; args: string[] }> = [];
+		let spawned = false;
 		const result = await spawnZellijPeer({
 			prompt: "Review auth and report with pi-peer send.",
 			parentSessionId: "parent-session",
@@ -30,7 +32,9 @@ describe("spawnZellijPeer", () => {
 				if (args[0] === "--version") return { stdout: "zellij 0.45.1\n" };
 				if (args[1] === "list-panes") return { stdout: JSON.stringify([
 					{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0 },
+					...(spawned ? [{ id: 4, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 0 }] : []),
 				]) };
+				if (args[0] === "run") spawned = true;
 				return { stdout: "terminal_4\n" };
 			},
 		});
@@ -95,16 +99,21 @@ describe("spawnZellijPeer", () => {
 		process.env.ZELLIJ_PANE_ID = "7";
 		const calls: string[][] = [];
 		let spawnEnvironment: NodeJS.ProcessEnv | undefined;
+		let spawned = false;
 		await spawnZellijPeer({ prompt: "task", parentSessionId: "parent", cwd: "/tmp", name: "worker" }, {
 			async run(_command, args, options) {
 				calls.push(args);
 				if (args[0] === "--version") return { stdout: "zellij 0.45.1\n" };
 				if (args[1] === "list-panes") return { stdout: JSON.stringify([
-					{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0 },
-					{ id: 8, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 0 },
-					{ id: 9, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 20 },
+					{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0, pane_rows: 60 },
+					{ id: 8, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 0, pane_rows: 20 },
+					{ id: 9, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 20, pane_rows: 20 },
+					...(spawned ? [{ id: 10, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 40, pane_rows: 20 }] : []),
 				]) };
-				if (args[0] === "run") spawnEnvironment = options?.env;
+				if (args[0] === "run") {
+					spawnEnvironment = options?.env;
+					spawned = true;
+				}
 				return { stdout: args[0] === "run" ? "terminal_10\n" : "" };
 			},
 		});
@@ -113,5 +122,110 @@ describe("spawnZellijPeer", () => {
 		expect(calls[2]).toContain("down");
 		expect(spawnEnvironment?.ZELLIJ_PANE_ID).toBe("9");
 		rmSync(dirname(calls[2].at(-1)!), { recursive: true, force: true });
+	});
+
+	test("places peers below the main pane after four right-column peers", async () => {
+		process.env.ZELLIJ = "1";
+		process.env.ZELLIJ_PANE_ID = "7";
+		const calls: string[][] = [];
+		let spawnEnvironment: NodeJS.ProcessEnv | undefined;
+		let spawned = false;
+		await spawnZellijPeer({ prompt: "task", parentSessionId: "parent", cwd: "/tmp", name: "worker" }, {
+			async run(_command, args, options) {
+				calls.push(args);
+				if (args[0] === "--version") return { stdout: "zellij 0.45.1\n" };
+				if (args[1] === "list-panes") return { stdout: JSON.stringify([
+					{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0, pane_rows: 30 },
+					{ id: 8, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 0 },
+					{ id: 9, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 10 },
+					{ id: 10, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 20 },
+					{ id: 11, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 30 },
+					{ id: 12, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 30, pane_rows: 30 },
+					...(spawned ? [{ id: 13, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 60, pane_rows: 30 }] : []),
+				]) };
+				if (args[0] === "run") {
+					spawnEnvironment = options?.env;
+					spawned = true;
+				}
+				return { stdout: args[0] === "run" ? "terminal_13\n" : "" };
+			},
+		});
+		expect(calls[2]).toContain("down");
+		expect(spawnEnvironment?.ZELLIJ_PANE_ID).toBe("12");
+		rmSync(dirname(calls[2].at(-1)!), { recursive: true, force: true });
+	});
+
+	test("balances the selected column after creating a pane", async () => {
+		process.env.ZELLIJ = "1";
+		process.env.ZELLIJ_PANE_ID = "7";
+		const calls: string[][] = [];
+		let spawned = false;
+		const rightColumn = [
+			{ id: 8, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 0, pane_rows: 40 },
+			{ id: 9, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 40, pane_rows: 20 },
+			{ id: 10, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 60, pane_rows: 20 },
+		];
+		await spawnZellijPeer({ prompt: "task", parentSessionId: "parent", cwd: "/tmp", name: "worker" }, {
+			async run(_command, args) {
+				calls.push(args);
+				if (args[0] === "--version") return { stdout: "zellij 0.45.1\n" };
+				if (args[1] === "list-panes") {
+					return { stdout: JSON.stringify(spawned ? [
+						{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0, pane_rows: 80 },
+						...rightColumn,
+					] : [
+						{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0, pane_rows: 80 },
+						{ id: 8, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 0, pane_rows: 40 },
+						{ id: 9, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 40, pane_rows: 40 },
+					]) };
+				}
+				if (args[0] === "run") {
+					spawned = true;
+					return { stdout: "terminal_10\n" };
+				}
+				if (args[1] === "resize") {
+					const paneId = Number(args.at(-1)?.replace("terminal_", ""));
+					const index = rightColumn.findIndex((pane) => pane.id === paneId);
+					const pane = rightColumn[index]!;
+					const next = rightColumn[index + 1]!;
+					const delta = args[2] === "increase" ? 4 : -4;
+					pane.pane_rows += delta;
+					next.pane_y += delta;
+					next.pane_rows -= delta;
+				}
+				return { stdout: "" };
+			},
+		});
+		const resizeCalls = calls.filter((args) => args[1] === "resize");
+		expect(resizeCalls.length).toBeGreaterThan(0);
+		const heights = rightColumn.map((pane) => pane.pane_rows);
+		expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(5);
+		const launcherPath = calls.find((args) => args[0] === "run")!.at(-1)!;
+		rmSync(dirname(launcherPath), { recursive: true, force: true });
+	});
+
+	test("reports when a pane cannot be closed after balancing fails", async () => {
+		process.env.ZELLIJ = "1";
+		process.env.ZELLIJ_PANE_ID = "7";
+		let spawned = false;
+		const calls: string[][] = [];
+		const operation = spawnZellijPeer({ prompt: "task", cwd: "/tmp", name: "worker" }, {
+			async run(_command, args) {
+				calls.push(args);
+				if (args[0] === "--version") return { stdout: "zellij 0.45.1" };
+				if (args[1] === "list-panes") return { stdout: spawned ? "invalid" : JSON.stringify([
+					{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0 },
+				]) };
+				if (args[0] === "run") {
+					spawned = true;
+					return { stdout: "terminal_8" };
+				}
+				if (args[1] === "close-pane") throw new Error("close failed");
+				return { stdout: "" };
+			},
+		});
+		expect(operation).rejects.toBeInstanceOf(PeerPaneCleanupError);
+		expect(operation).rejects.toThrow("Zellij pane terminal_8 still exists");
+		expect(calls).toContainEqual(["action", "close-pane", "--pane-id", "terminal_8"]);
 	});
 });

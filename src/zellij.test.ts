@@ -40,7 +40,7 @@ describe("spawnZellijPeer", () => {
 		const invocation = invocations[2];
 		expect(invocation?.command).toBe("zellij");
 		expect(invocation?.args.slice(0, -2)).toEqual([
-			"action", "new-pane", "--no-focus", "--close-on-exit", "--cwd", "/workspace/project", "--name", "auth-review",
+			"run", "--no-focus", "--close-on-exit", "--cwd", "/workspace/project", "--name", "auth-review",
 			"--direction", "right", "--",
 		]);
 		expect(invocation?.args.at(-2)).toBe("sh");
@@ -104,10 +104,11 @@ describe("spawnZellijPeer", () => {
 					{ id: 8, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 0 },
 					{ id: 9, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 80, pane_y: 20 },
 				]) };
-				if (args[1] === "new-pane") spawnEnvironment = options?.env;
-				return { stdout: args[1] === "new-pane" ? "terminal_10\n" : "" };
+				if (args[0] === "run") spawnEnvironment = options?.env;
+				return { stdout: args[0] === "run" ? "terminal_10\n" : "" };
 			},
 		});
+		expect(calls[2][0]).toBe("run");
 		expect(calls[2]).toContain("--direction");
 		expect(calls[2]).toContain("down");
 		expect(spawnEnvironment?.ZELLIJ_PANE_ID).toBe("9");

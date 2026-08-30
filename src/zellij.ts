@@ -48,7 +48,7 @@ export async function spawnZellijPeer(
 		direction = "down";
 	}
 	const launcher = createPeerLauncher(input);
-	const args = ["action", "new-pane", "--no-focus", "--close-on-exit", "--cwd", input.cwd, "--name", peerPaneTitle(input)];
+	const args = ["run", "--no-focus", "--close-on-exit", "--cwd", input.cwd, "--name", peerPaneTitle(input)];
 	args.push("--direction", direction);
 	args.push("--", "sh", launcher.path);
 	try {

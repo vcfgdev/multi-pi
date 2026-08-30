@@ -65,19 +65,20 @@ function muxIdentity(): PeerPublication["mux"] | undefined {
 	return undefined;
 }
 
-function inboundPrompt(envelope: PeerEnvelope, guidance?: string): string {
+function inboundPrompt(envelope: PeerEnvelope, peerStatus?: string): string {
 	const sender = envelope.from.sessionName
 		? `${envelope.from.sessionName} (${envelope.from.sessionId})`
 		: envelope.from.sessionId;
 	return [
 		"---",
-		`[Pi peer ${envelope.kind}]`,
-		`Message: ${envelope.id}`,
-		`From: ${sender}`,
-		...(envelope.taskId ? [`Task: ${envelope.taskId}`] : []),
+		`Kind: pi-peer-${envelope.kind}`,
+		`From: ${JSON.stringify(sender)}`,
+		...(envelope.taskId && envelope.taskId !== envelope.from.sessionName
+			? [`TaskID: ${JSON.stringify(envelope.taskId)}`]
+			: []),
+		...(peerStatus ? [`PeerStatus: ${JSON.stringify(peerStatus)}`] : []),
 		"---",
 		envelope.message,
-		...(guidance ? ["", "[Peer coordination]", guidance] : []),
 	].join("\n");
 }
 
@@ -337,15 +338,16 @@ export default function multiPi(pi: ExtensionAPI, dependencies: MultiPiDependenc
 	function receiveMessages(): Promise<void> {
 		if (receiveTask) return receiveTask;
 		receiveTask = endpoint.receive(async (envelope) => {
-			const hasOtherChildren = envelope.kind === "result"
-				&& [...derivedPeers.values()].some(({ peer, missingSince }) =>
-					missingSince === undefined && peer.sessionId !== envelope.from.sessionId);
+			const otherLivePeers = envelope.kind === "result"
+				? [...derivedPeers.values()]
+					.filter(({ peer, missingSince }) => missingSince === undefined && peer.sessionId !== envelope.from.sessionId)
+					.sort((left, right) => left.peer.startedAt.localeCompare(right.peer.startedAt))
+					.map(({ peer }) => `alive (${peer.sessionName ?? peer.sessionId})`)
+				: [];
 			await pi.sendUserMessage(
 				inboundPrompt(
 					envelope,
-					hasOtherChildren
-						? "Other spawned peers are live. If they still owe results, inspect each once with pi-peer, remind an idle peer once with pi-peer send, and do not poll."
-						: undefined,
+					otherLivePeers.length ? otherLivePeers.join(", ") : undefined,
 				),
 				{ deliverAs: envelope.delivery },
 			);

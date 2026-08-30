@@ -149,12 +149,28 @@ describe("multi-pi runtime extension", () => {
 			kind: "question",
 			delivery: "followUp",
 			message: "Which verifier is active?",
-			taskId: "task-7",
+			taskId: "Planner",
 			sentAt: "2026-08-27T10:00:03Z",
 		});
 		expect(userMessages.at(-1)).toEqual({
-			content: "---\n[Pi peer question]\nMessage: incoming-1\nFrom: Planner (sender)\nTask: task-7\n---\nWhich verifier is active?",
+			content: "---\nKind: pi-peer-question\nFrom: \"Planner (sender)\"\n---\nWhich verifier is active?",
 			options: { deliverAs: "followUp" },
+		});
+		await receiver?.({
+			version: 2,
+			id: "incoming-2",
+			targetSessionId: "current-session",
+			targetEndpointId: "11111111-1111-4111-8111-111111111111",
+			from: { sessionId: "sender", sessionName: "Planner" },
+			kind: "result",
+			delivery: "steer",
+			message: "The refresh path is safe.",
+			taskId: "task-7",
+			sentAt: "2026-08-27T10:00:04Z",
+		});
+		expect(userMessages.at(-1)).toEqual({
+			content: "---\nKind: pi-peer-result\nFrom: \"Planner (sender)\"\nTaskID: \"task-7\"\nPeerStatus: \"alive (Reviewer)\"\n---\nThe refresh path is safe.",
+			options: { deliverAs: "steer" },
 		});
 		const guidance = await emit("before_agent_start", { systemPrompt: "base" });
 		expect(guidance.systemPrompt).toContain("delegated by session parent-session");

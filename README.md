@@ -25,7 +25,7 @@ https://github.com/user-attachments/assets/b1aac372-e98a-414b-a7bc-03797da6fdf3
 
 | Setup | Spawn panes | List, inspect, and send |
 | --- | :---: | :---: |
-| macOS with cmux | ✓ | ✓ |
+| macOS with cmux 0.64.11+ | ✓ | ✓ |
 | macOS or Linux with Zellij 0.45+ or tmux | ✓ | ✓ |
 | Separately started Pi sessions | N/A | ✓ |
 | Windows | N/A | N/A |
@@ -78,11 +78,14 @@ call path, race window, relevant tests, and smallest safe fix. Keep this read-on
 EOF
 ```
 
-Pass Pi options after `--`:
+Pass Pi options after `--`. For a requested model, first resolve its provider
+and exact ID; honor named providers and ask if ambiguous:
 
 ```sh
+pi --list-models REQUESTED_MODEL
 pi-peer spawn --name focused-review --cwd "$PWD" -- \
-  --model sonnet:high --tools read,bash,grep --skill ./skills/review <<'EOF'
+  --provider PROVIDER --model EXACT_MODEL_ID --thinking high \
+  --tools read,bash,grep --skill ./skills/review <<'EOF'
 Review the authentication changes and return verified findings.
 EOF
 ```
@@ -90,23 +93,22 @@ EOF
 Restricted tool sets should include `bash` for `pi-peer send`. Identity and
 lifecycle flags are rejected.
 
-In a fresh single-pane mux layout, the main pane initially occupies the full
-window. `pi-peer` places peers automatically in this order:
+Automatic placement, rebalanced after every spawn:
 
-1. The first peer opens to the right of the main pane.
-2. Each additional peer opens below the bottom-most pane in the right column.
-3. Closing a peer removes it from the limit and the next peer uses the current
-   bottom of the right column.
+1. Peer 1 opens right of main.
+2. Peers 2–4 fill the right column.
+3. Peers 5–7 fill the main column.
 
 ```text
 ┌──────────────┬────────┐
-│              │ Peer 1 │
+│ Main         │ Peer 1 │
 │              ├────────┤
-│ Main         │ Peer 2 │
-│              ├────────┤
-│              │  ...   │
-│              ├────────┤
-│              │ Peer 7 │
+├──────────────┤ Peer 2 │
+│ Peer 5       ├────────┤
+├──────────────┤ Peer 3 │
+│ Peer 6       ├────────┤
+├──────────────┤ Peer 4 │
+│ Peer 7       │        │
 └──────────────┴────────┘
 ```
 

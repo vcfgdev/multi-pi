@@ -1,31 +1,34 @@
 ---
 name: coordinating-pi-peers
 description: Coordinates independently steerable Pi sessions in visible terminal panes. Use when work should be delegated in parallel, when inspecting, messaging, or closing a live Pi peer, or when returning a delegated result to a parent session.
-compatibility: Requires the pi-peer CLI and Pi running inside cmux, Zellij 0.45+, or tmux for spawning.
+compatibility: Requires the pi-peer CLI and Pi running inside cmux 0.64.11+, Zellij 0.45+, or tmux for spawning.
 ---
 
 # Coordinating Pi peers
 
-Use Pi's Bash tool to run `pi-peer`. Run `pi-peer <command> --help` for exact
-syntax instead of guessing flags.
+Use Pi's Bash tool to run `pi-peer`; use `pi-peer <command> --help` for syntax.
 
 Spawn a peer only for independently steerable work. Give it a concise name and
 a self-contained task with scope, constraints, expected evidence, and return
 shape. Provide long prompts on stdin rather than constructing fragile shell
 quoting.
 
-Put `pi-peer` options before `--` and Pi options after it. Include `bash` in a
-restricted tool set so the peer can report with `pi-peer send`:
+Put `pi-peer` options before `--` and Pi options after it. For a requested
+model, run `pi --list-models REQUESTED_MODEL`, then pass the requested provider
+and exact model ID. Honor named providers; ask if ambiguous. Include `bash` in
+restricted tools so the peer can report:
 
 ```sh
+pi --list-models REQUESTED_MODEL
 pi-peer spawn --name auth-review --cwd "$PWD" -- \
-  --model sonnet:high --tools read,bash,grep --skill ./skills/review <<'EOF'
+  --provider PROVIDER --model EXACT_MODEL_ID --thinking high \
+  --tools read,bash,grep --skill ./skills/review <<'EOF'
 Review authentication changes and return verified findings.
 EOF
 ```
 
-`pi-peer` rejects Pi flags that replace the peer's identity or interactive
-lifecycle.
+Do not guess model names. `pi-peer` rejects Pi flags that replace peer identity
+or lifecycle.
 
 The available operations are:
 
@@ -35,10 +38,8 @@ The available operations are:
 - `pi-peer send`: send a question, status, result, or steering instruction;
 - `pi-peer close`: close one or all direct peers and their panes.
 
-Spawned peers remain available for human steering. Do not poll them. Finish the
-current turn and let results arrive through the runtime inbox. Inspect once when
-a progress check is necessary, and remind an idle peer once if it still owes a
-result.
+Do not poll peers. Let results arrive through the runtime inbox; inspect once
+when needed and remind an idle peer once if it still owes a result.
 
 When asked to close peers, use `pi-peer close <peer>` or `pi-peer close --all`.
 Only direct children of the current session can be closed.

@@ -1,5 +1,6 @@
 import { createPeerLauncher, peerPaneTitle, removePeerLauncher } from "./launcher.ts";
 import type { SpawnPeerInput } from "./mux.ts";
+import { MAX_RIGHT_COLUMN_PEERS, PeerPaneCleanupError } from "./protocol.ts";
 import { type CommandRunner, defaultCommandRunner } from "./zellij.ts";
 
 export async function spawnTmuxPeer(
@@ -22,7 +23,13 @@ export async function spawnTmuxPeer(
 		const rightColumn = source
 			? panes.filter((pane) => pane.left > source.left).sort((a, b) => b.top - a.top)
 			: [];
-		if (rightColumn[0]?.id) {
+		const sourceColumn = source
+			? panes.filter((pane) => pane.left === source.left && pane.top > source.top).sort((a, b) => b.top - a.top)
+			: [];
+		if (rightColumn.length >= MAX_RIGHT_COLUMN_PEERS) {
+			targetPane = sourceColumn[0]?.id ?? source?.id;
+			direction = "down";
+		} else if (rightColumn[0]?.id) {
 			targetPane = rightColumn[0].id;
 			direction = "down";
 		} else {
@@ -38,7 +45,17 @@ export async function spawnTmuxPeer(
 		const result = await runner.run("tmux", args);
 		const paneId = result.stdout.trim();
 		if (!paneId) throw new Error("tmux did not return the created pane ID");
-		await runner.run("tmux", ["select-pane", "-t", paneId, "-T", peerPaneTitle(input)]);
+		try {
+			await runner.run("tmux", ["select-pane", "-t", paneId, "-T", peerPaneTitle(input)]);
+			await runner.run("tmux", ["select-layout", "-E", "-t", paneId]);
+		} catch (error) {
+			try {
+				await runner.run("tmux", ["kill-pane", "-t", paneId]);
+			} catch (cleanupError) {
+				throw new PeerPaneCleanupError(`tmux pane ${paneId} still exists after spawn setup failed`, { cause: cleanupError });
+			}
+			throw error;
+		}
 		return { paneId };
 	} catch (error) {
 		removePeerLauncher(launcher);

@@ -37,7 +37,7 @@ describe("spawnTmuxPeer", () => {
 		});
 
 		expect(result).toEqual({ paneId: "%4" });
-		expect(invocations).toHaveLength(3);
+		expect(invocations).toHaveLength(4);
 		expect(invocations[1].command).toBe("tmux");
 		expect(invocations[1].args.slice(0, -2)).toEqual([
 			"split-window", "-d", "-P", "-F", "#{pane_id}", "-c", "/workspace/project",
@@ -54,6 +54,7 @@ describe("spawnTmuxPeer", () => {
 		expect(launcher).not.toContain("TMUX_PANE=");
 		expect(launcher).toContain("'--model' 'sonnet:high'");
 		expect(invocations[2]).toEqual({ command: "tmux", args: ["select-pane", "-t", "%4", "-T", "auth-review"] });
+		expect(invocations[3]).toEqual({ command: "tmux", args: ["select-layout", "-E", "-t", "%4"] });
 		rmSync(dirname(launcherPath), { recursive: true, force: true });
 	});
 
@@ -101,5 +102,40 @@ describe("spawnTmuxPeer", () => {
 		expect(calls[1]).toContain("%3");
 		expect(calls[1]).toContain("-v");
 		rmSync(dirname(calls[1].at(-1)!), { recursive: true, force: true });
+	});
+
+	test("places peers below the main pane after four right-column peers", async () => {
+		process.env.TMUX = "/tmp/tmux/default,1,0";
+		process.env.TMUX_PANE = "%1";
+		const calls: string[][] = [];
+		await spawnTmuxPeer({ prompt: "task", parentSessionId: "parent", cwd: "/tmp", name: "worker" }, {
+			async run(_command, args) {
+				calls.push(args);
+				if (args[0] === "list-panes") {
+					return { stdout: "%1\t0\t0\n%2\t80\t0\n%3\t80\t10\n%4\t80\t20\n%5\t80\t30\n%6\t0\t20\n" };
+				}
+				return { stdout: args[0] === "split-window" ? "%7" : "" };
+			},
+		});
+		expect(calls[1]).toContain("-t");
+		expect(calls[1]).toContain("%6");
+		expect(calls[1]).toContain("-v");
+		rmSync(dirname(calls[1].at(-1)!), { recursive: true, force: true });
+	});
+
+	test("closes a created pane when post-spawn setup fails", async () => {
+		process.env.TMUX = "/tmp/tmux/default,1,0";
+		process.env.TMUX_PANE = "%1";
+		const calls: string[][] = [];
+		expect(spawnTmuxPeer({ prompt: "task", cwd: "/tmp", name: "worker" }, {
+			async run(_command, args) {
+				calls.push(args);
+				if (args[0] === "list-panes") return { stdout: "%1\t0\t0\n" };
+				if (args[0] === "split-window") return { stdout: "%2" };
+				if (args[0] === "select-layout") throw new Error("equalize failed");
+				return { stdout: "" };
+			},
+		})).rejects.toThrow("equalize failed");
+		expect(calls).toContainEqual(["kill-pane", "-t", "%2"]);
 	});
 });

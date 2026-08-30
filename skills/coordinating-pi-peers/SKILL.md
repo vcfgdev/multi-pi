@@ -14,6 +14,19 @@ a self-contained task with scope, constraints, expected evidence, and return
 shape. Provide long prompts on stdin rather than constructing fragile shell
 quoting.
 
+Put `pi-peer` options before `--` and Pi options after it. Include `bash` in a
+restricted tool set so the peer can report with `pi-peer send`:
+
+```sh
+pi-peer spawn --name auth-review --cwd "$PWD" -- \
+  --model sonnet:high --tools read,bash,grep --skill ./skills/review <<'EOF'
+Review authentication changes and return verified findings.
+EOF
+```
+
+`pi-peer` rejects Pi flags that replace the peer's identity or interactive
+lifecycle.
+
 The available operations are:
 
 - `pi-peer spawn`: open a full interactive Pi session in a neighboring pane;

@@ -78,6 +78,18 @@ call path, race window, relevant tests, and smallest safe fix. Keep this read-on
 EOF
 ```
 
+Pass Pi options after `--`:
+
+```sh
+pi-peer spawn --name focused-review --cwd "$PWD" -- \
+  --model sonnet:high --tools read,bash,grep --skill ./skills/review <<'EOF'
+Review the authentication changes and return verified findings.
+EOF
+```
+
+Restricted tool sets should include `bash` for `pi-peer send`. Identity and
+lifecycle flags are rejected.
+
 In a fresh single-pane mux layout, the main pane initially occupies the full
 window. Peers use this default order:
 

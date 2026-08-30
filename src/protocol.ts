@@ -24,9 +24,17 @@ export const MAX_MESSAGE_LENGTH = 50_000;
 export const MAX_REGISTRATION_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_ENVELOPE_FILE_BYTES = 256 * 1024;
 export const MAX_DIRECT_PEERS = 7;
+export const MAX_RIGHT_COLUMN_PEERS = 4;
 const PEER_RESERVATION_STALE_MS = 60_000;
 const PEER_RESERVATION_MAX_BYTES = 4 * 1024;
 const PEER_RESERVATION_LOCK_STALE_MS = 10_000;
+
+export class PeerPaneCleanupError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "PeerPaneCleanupError";
+	}
+}
 
 export type PeerActivity = "idle" | "thinking" | "tool";
 export type PeerMessageKind = "question" | "status" | "result" | "steer";

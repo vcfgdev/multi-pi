@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { closePeerPane } from "./mux.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { closePeerPane, withPlacementLock } from "./mux.ts";
 import type { PeerRegistration } from "./protocol.ts";
 
 function peer(kind: "cmux" | "zellij" | "tmux", session?: string): PeerRegistration {
@@ -42,5 +45,37 @@ describe("closePeerPane", () => {
 		const registration = peer("tmux");
 		delete registration.mux;
 		expect(closePeerPane(registration)).rejects.toThrow("no live terminal pane");
+	});
+});
+
+describe("withPlacementLock", () => {
+	test("serializes concurrent pane placement", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-peer-placement-"));
+		const original = process.env.PI_PEER_STATE_DIR;
+		process.env.PI_PEER_STATE_DIR = root;
+		const events: string[] = [];
+		let releaseFirst!: () => void;
+		let firstStarted!: () => void;
+		const started = new Promise<void>((resolve) => { firstStarted = resolve; });
+		const gate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+		try {
+			const first = withPlacementLock(async () => {
+				events.push("first start");
+				firstStarted();
+				await gate;
+				events.push("first end");
+			});
+			await started;
+			const second = withPlacementLock(async () => { events.push("second"); });
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(events).toEqual(["first start"]);
+			releaseFirst();
+			await Promise.all([first, second]);
+			expect(events).toEqual(["first start", "first end", "second"]);
+		} finally {
+			if (original === undefined) delete process.env.PI_PEER_STATE_DIR;
+			else process.env.PI_PEER_STATE_DIR = original;
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

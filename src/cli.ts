@@ -4,6 +4,7 @@ import {
 	MAX_DIRECT_PEERS,
 	MAX_MESSAGE_LENGTH,
 	PeerEndpoint,
+	PeerPaneCleanupError,
 	publicPeer,
 	type PeerDelivery,
 	type PeerMessageKind,
@@ -279,7 +280,7 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 						...(reservationId ? { reservationId } : {}),
 					});
 				} catch (error) {
-					if (reservationId) getEndpoint().releasePeerReservation(reservationId);
+					if (reservationId && !(error instanceof PeerPaneCleanupError)) getEndpoint().releasePeerReservation(reservationId);
 					throw error;
 				}
 				const value = { spawned: true, paneId: result.paneId, name, root: !env.PI_SESSION_ID };

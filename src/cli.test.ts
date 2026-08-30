@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { runCli, type CliDependencies } from "./cli.ts";
-import type { PeerRegistration } from "./protocol.ts";
+import { PeerPaneCleanupError, type PeerRegistration } from "./protocol.ts";
 
 function registration(overrides: Partial<PeerRegistration> = {}): PeerRegistration {
 	return {
@@ -108,7 +108,8 @@ describe("pi-peer CLI", () => {
 		const test = harness({ PI_SESSION_ID: "caller-session" });
 		expect(await runCli([
 			"spawn", "--name", "reviewer", "--cwd", "/workspace/project", "--",
-			"--model", "sonnet:high", "--tools", "read,bash,grep",
+			"--provider", "anthropic", "--model", "claude-sonnet-4-5", "--thinking", "high",
+			"--tools", "read,bash,grep",
 			"--skill", "./skills/first", "--skill", "./skills/with spaces",
 		], test.dependencies)).toBe(0);
 		expect(test.spawned).toEqual([{
@@ -116,7 +117,8 @@ describe("pi-peer CLI", () => {
 			name: "reviewer",
 			cwd: "/workspace/project",
 			piArgs: [
-				"--model", "sonnet:high", "--tools", "read,bash,grep",
+				"--provider", "anthropic", "--model", "claude-sonnet-4-5", "--thinking", "high",
+				"--tools", "read,bash,grep",
 				"--skill", "./skills/first", "--skill", "./skills/with spaces",
 			],
 			parentSessionId: "caller-session",
@@ -173,6 +175,14 @@ describe("pi-peer CLI", () => {
 		test.dependencies.spawn = async () => { throw new Error("split failed"); };
 		expect(await runCli(["spawn", "--name", "worker"], test.dependencies)).toBe(1);
 		expect(test.released).toEqual(["33333333-3333-4333-8333-333333333333"]);
+	});
+
+	test("keeps a reservation when a failed spawn may have left its pane running", async () => {
+		const test = harness({ PI_SESSION_ID: "caller-session" });
+		test.dependencies.spawn = async () => { throw new PeerPaneCleanupError("pane still exists"); };
+		expect(await runCli(["spawn", "--name", "worker"], test.dependencies)).toBe(1);
+		expect(test.released).toEqual([]);
+		expect(test.stderr.join("")).toContain("pane still exists");
 	});
 
 	test("lists and inspects bounded peer state", async () => {

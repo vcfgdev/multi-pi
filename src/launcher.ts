@@ -90,7 +90,6 @@ export function createPeerLauncher(input: SpawnPeerInput): PeerLauncher {
 		"pi",
 		"--name",
 		input.name,
-		...(input.model ? ["--model", input.model] : []),
 		...(input.piArgs ?? []),
 		"--",
 		input.prompt,

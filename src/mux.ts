@@ -8,8 +8,6 @@ export interface SpawnPeerInput {
 	parentSessionId?: string;
 	cwd: string;
 	name: string;
-	direction?: "right" | "down";
-	model?: string;
 	piArgs?: string[];
 	reservationId?: string;
 }

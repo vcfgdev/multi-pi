@@ -91,7 +91,7 @@ Restricted tool sets should include `bash` for `pi-peer send`. Identity and
 lifecycle flags are rejected.
 
 In a fresh single-pane mux layout, the main pane initially occupies the full
-window. Peers use this default order:
+window. `pi-peer` places peers automatically in this order:
 
 1. The first peer opens to the right of the main pane.
 2. Each additional peer opens below the bottom-most pane in the right column.

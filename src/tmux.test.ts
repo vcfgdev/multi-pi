@@ -27,24 +27,24 @@ describe("spawnTmuxPeer", () => {
 			parentSessionId: "parent-session",
 			cwd: "/workspace/project",
 			name: "auth-review",
-			direction: "down",
-			model: "sonnet:high",
+			piArgs: ["--model", "sonnet:high"],
 		}, {
 			async run(command, args) {
 				invocations.push({ command, args });
-				return { stdout: invocations.length === 1 ? "%4\n" : "" };
+				if (args[0] === "list-panes") return { stdout: "%1\t0\t0\n%2\t80\t0\n" };
+				return { stdout: args[0] === "split-window" ? "%4\n" : "" };
 			},
 		});
 
 		expect(result).toEqual({ paneId: "%4" });
-		expect(invocations).toHaveLength(2);
-		expect(invocations[0].command).toBe("tmux");
-		expect(invocations[0].args.slice(0, -2)).toEqual([
+		expect(invocations).toHaveLength(3);
+		expect(invocations[1].command).toBe("tmux");
+		expect(invocations[1].args.slice(0, -2)).toEqual([
 			"split-window", "-d", "-P", "-F", "#{pane_id}", "-c", "/workspace/project",
-			"-t", "%1", "-v", "--",
+			"-t", "%2", "-v", "--",
 		]);
-		expect(invocations[0].args.at(-2)).toBe("sh");
-		const launcherPath = invocations[0].args.at(-1)!;
+		expect(invocations[1].args.at(-2)).toBe("sh");
+		const launcherPath = invocations[1].args.at(-1)!;
 		const launcher = readFileSync(launcherPath, "utf8");
 		expect(launcher).toContain(`'PATH=${process.env.PATH}'`);
 		expect(launcher).toContain("'MULTI_PI_STATE_DIR=/tmp/peer state'");
@@ -53,7 +53,7 @@ describe("spawnTmuxPeer", () => {
 		expect(launcher).toContain("'PI_PEER_TASK_ID=auth-review'");
 		expect(launcher).not.toContain("TMUX_PANE=");
 		expect(launcher).toContain("'--model' 'sonnet:high'");
-		expect(invocations[1]).toEqual({ command: "tmux", args: ["select-pane", "-t", "%4", "-T", "auth-review"] });
+		expect(invocations[2]).toEqual({ command: "tmux", args: ["select-pane", "-t", "%4", "-T", "auth-review"] });
 		rmSync(dirname(launcherPath), { recursive: true, force: true });
 	});
 

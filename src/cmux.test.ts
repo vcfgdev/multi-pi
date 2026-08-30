@@ -32,36 +32,38 @@ describe("spawnCmuxPeer", () => {
 			parentSessionId: "parent-session",
 			cwd: "/workspace/project",
 			name: "auth-review",
-			direction: "down",
-			model: "sonnet:high",
+			piArgs: ["--model", "sonnet:high"],
 		}, {
 			async run(command, args) {
 				invocations.push({ command, args });
-				if (args[0] === "rpc") {
+				if (args[1] === "surface.list") return { stdout: JSON.stringify({ surfaces: [
+					{ ref: "surface:1", pane_ref: "pane:1" },
+				] }) };
+				if (args[1] === "pane.list") return { stdout: JSON.stringify({ panes: [
+					{ ref: "pane:1", pixel_frame: { x: 0, y: 0 }, selected_surface_ref: "surface:1" },
+				] }) };
+				if (args[1] === "surface.split") {
 					const parameters = JSON.parse(args[2]);
 					launcherPath = parameters.initial_command.match(/^sh '([^']+)'$/)?.[1];
+					return { stdout: JSON.stringify({ result: { surface_id: "surface:2" } }) };
 				}
-				return {
-					stdout: args[0] === "rpc"
-						? JSON.stringify({ result: { surface_id: "surface:2" } })
-						: "",
-				};
+				return { stdout: "" };
 			},
 		});
 
 		expect(result).toEqual({ paneId: "surface:2" });
-		expect(invocations).toHaveLength(2);
-		expect(invocations[0].command).toBe("cmux");
-		expect(invocations[0].args.slice(0, 2)).toEqual(["rpc", "surface.split"]);
-		expect(JSON.parse(invocations[0].args[2])).toMatchObject({
+		expect(invocations).toHaveLength(4);
+		expect(invocations[2].command).toBe("cmux");
+		expect(invocations[2].args.slice(0, 2)).toEqual(["rpc", "surface.split"]);
+		expect(JSON.parse(invocations[2].args[2])).toMatchObject({
 			workspace_id: "workspace:1",
 			surface_id: "surface:1",
-			direction: "down",
+			direction: "right",
 			type: "terminal",
 			working_directory: "/workspace/project",
 			focus: false,
 		});
-		expect(invocations[1]).toEqual({ command: "cmux", args: ["rename-tab", "--surface", "surface:2", "auth-review"] });
+		expect(invocations[3]).toEqual({ command: "cmux", args: ["rename-tab", "--surface", "surface:2", "auth-review"] });
 		expect(invocations.flatMap(({ args }) => args)).not.toContain("send");
 		expect(launcherPath).toBeDefined();
 		const launcher = readFileSync(launcherPath!, "utf8");

@@ -10,8 +10,8 @@ export async function spawnTmuxPeer(
 		throw new Error("pi-peer spawn must run inside tmux");
 	}
 	let targetPane = process.env.TMUX_PANE;
-	let direction = input.direction;
-	if (!direction && targetPane) {
+	let direction: "right" | "down" = "right";
+	if (targetPane) {
 		const panes = (await runner.run("tmux", [
 			"list-panes", "-t", targetPane, "-F", "#{pane_id}\t#{pane_left}\t#{pane_top}",
 		])).stdout.trim().split("\n").map((line) => {

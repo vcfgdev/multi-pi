@@ -23,19 +23,21 @@ describe("spawnZellijPeer", () => {
 			parentSessionId: "parent-session",
 			cwd: "/workspace/project",
 			name: "auth-review",
-			direction: "right",
-			model: "sonnet:high",
+			piArgs: ["--model", "sonnet:high"],
 		}, {
 			async run(command, args) {
 				invocations.push({ command, args });
 				if (args[0] === "--version") return { stdout: "zellij 0.45.1\n" };
+				if (args[1] === "list-panes") return { stdout: JSON.stringify([
+					{ id: 7, is_plugin: false, is_floating: false, tab_id: 1, pane_x: 0, pane_y: 0 },
+				]) };
 				return { stdout: "terminal_4\n" };
 			},
 		});
 
 		expect(result).toEqual({ paneId: "terminal_4" });
 		expect(invocations[0]).toEqual({ command: "zellij", args: ["--version"] });
-		const invocation = invocations[1];
+		const invocation = invocations[2];
 		expect(invocation?.command).toBe("zellij");
 		expect(invocation?.args.slice(0, -2)).toEqual([
 			"action", "new-pane", "--no-focus", "--close-on-exit", "--cwd", "/workspace/project", "--name", "auth-review",

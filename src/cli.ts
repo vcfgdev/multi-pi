@@ -19,28 +19,25 @@ Usage:
   pi-peer list [--json]
   pi-peer inspect <peer> [--limit <records>] [--json]
   pi-peer send [peer] --kind <kind> [options] [--message <text>]
-  pi-peer close <peer> [--json]
-  pi-peer close --all [--json]
+  pi-peer close <peer|--all> [--json]
 
-Use "pi-peer <command> --help" for command details. Prompts and messages may be
-provided on stdin. A peer launched outside Pi starts as an independent root.`;
+Use "pi-peer <command> --help" for command details. Spawn tasks are required on
+stdin; messages may also be provided there. A peer launched outside Pi starts as
+an independent root.`;
 
 const COMMAND_HELP: Record<string, string> = {
 	spawn: `Usage: pi-peer spawn --name <name> [options] [-- <pi-options...>]
 
 Open a full interactive Pi session in a neighboring cmux, Zellij, or tmux pane.
 When run from Pi's Bash tool, the current PI_SESSION_ID becomes the direct parent.
-By default, peers form a vertical column to the right of the current pane.
+Peers are placed automatically in a vertical column to the right of the current pane.
 Each session may have at most ${MAX_DIRECT_PEERS} live direct peers.
-Pi options follow --; the task comes from --prompt or stdin. Restricted tool
-sets should include bash. Session-replacing Pi flags are rejected.
+Pi options follow --; the task is read from stdin. Restricted tool sets should
+include bash. Session-replacing Pi flags are rejected.
 
 Options:
   --name <name>          Pane and Pi session name (required)
   --cwd <directory>     Working directory (default: current directory)
-  --direction <value>   right or down
-  --model <model>       Deprecated alias for Pi's --model
-  --prompt <text>       Initial task; otherwise read stdin
   --json                Print a JSON result`,
 	list: `Usage: pi-peer list [--json]
 
@@ -61,11 +58,9 @@ to its parent. The message is read from stdin when --message is omitted.
 Options:
   --kind <kind>          question, status, result, or steer (required)
   --delivery <mode>      steer or followUp
-  --task-id <id>         Task correlation ID (defaults to current peer task)
   --message <text>       Message body; otherwise read stdin
   --json                 Print a JSON result`,
-	close: `Usage: pi-peer close <peer> [--json]
-       pi-peer close --all [--json]
+	close: `Usage: pi-peer close <peer|--all> [--json]
 
 Close one or all live direct peers and their terminal panes. Roots, siblings,
 and unrelated panes cannot be closed.
@@ -134,7 +129,7 @@ function validateForwardedPiArguments(args: string[]): void {
 	for (let index = 0; index < args.length; index += 1) {
 		const argument = args[index]!;
 		if (argument.startsWith("@") || !argument.startsWith("-")) {
-			throw new Error("Pi messages and files must be provided through --prompt or stdin");
+			throw new Error("Pi messages and files must be provided through stdin");
 		}
 		const equals = argument.indexOf("=");
 		const option = equals === -1 ? argument : argument.slice(0, equals);
@@ -262,18 +257,16 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 		switch (command) {
 			case "spawn": {
 				const { peerArgs, piArgs } = splitForwardedArguments(commandArgs);
-				const parsed = parseArguments(peerArgs, new Set(["name", "cwd", "direction", "model", "prompt"]));
+				const parsed = parseArguments(peerArgs, new Set(["name", "cwd"]));
 				if (parsed.flags.has("help")) {
 					stdout(`${COMMAND_HELP.spawn}\n`);
 					return 0;
 				}
-				if (parsed.positionals.length) throw new Error("pi-peer spawn accepts the task through --prompt or stdin");
+				if (parsed.positionals.length) throw new Error("pi-peer spawn reads the task from stdin");
 				validateForwardedPiArguments(piArgs);
 				const name = requireText(flag(parsed, "name"), "--name", 80);
 				if (/[\r\n]/.test(name)) throw new Error("--name cannot contain a newline");
-				const direction = flag(parsed, "direction") as "right" | "down" | undefined;
-				if (direction && direction !== "right" && direction !== "down") throw new Error("--direction must be right or down");
-				const prompt = requireText(flag(parsed, "prompt") ?? await readStdin(), "A prompt via --prompt or stdin", MAX_MESSAGE_LENGTH);
+				const prompt = requireText(await readStdin(), "A prompt via stdin", MAX_MESSAGE_LENGTH);
 				const reservationId = env.PI_SESSION_ID ? getEndpoint().reserveDirectPeer(env.PI_SESSION_ID) : undefined;
 				let result: { paneId: string };
 				try {
@@ -281,8 +274,6 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 						prompt,
 						name,
 						cwd: flag(parsed, "cwd") ?? cwd(),
-						...(direction ? { direction } : {}),
-						...(flag(parsed, "model") ? { model: flag(parsed, "model") } : {}),
 						...(piArgs.length ? { piArgs } : {}),
 						...(env.PI_SESSION_ID ? { parentSessionId: env.PI_SESSION_ID } : {}),
 						...(reservationId ? { reservationId } : {}),
@@ -324,7 +315,7 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 				return 0;
 			}
 			case "send": {
-				const parsed = parseArguments(commandArgs, new Set(["kind", "delivery", "task-id", "message"]));
+				const parsed = parseArguments(commandArgs, new Set(["kind", "delivery", "message"]));
 				if (parsed.flags.has("help")) {
 					stdout(`${COMMAND_HELP.send}\n`);
 					return 0;
@@ -348,7 +339,7 @@ export async function runCli(args: string[], dependencies: CliDependencies = {})
 					target,
 					kind,
 					message,
-					...(flag(parsed, "task-id") ?? env.PI_PEER_TASK_ID ? { taskId: flag(parsed, "task-id") ?? env.PI_PEER_TASK_ID } : {}),
+					...(env.PI_PEER_TASK_ID ? { taskId: env.PI_PEER_TASK_ID } : {}),
 					...(delivery ? { delivery } : replyingToParent ? { delivery: "steer" } : {}),
 				});
 				const value = { queued: true, acknowledged: false, messageId: envelope.id, target, kind: envelope.kind, delivery: envelope.delivery };

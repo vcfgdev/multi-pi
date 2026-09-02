@@ -204,3 +204,7 @@ mise exec -- bun run pi -- -e .
 
 - [`pi-intercom`](https://github.com/nicobailon/pi-intercom)
 - [`pi-subagents`](https://github.com/nicobailon/pi-subagents)
+
+## License
+
+[MIT](LICENSE)
